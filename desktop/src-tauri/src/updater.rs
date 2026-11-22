@@ -6,6 +6,7 @@
 //! O pacote vem assinado; o app só instala se a assinatura bater com a chave
 //! pública em tauri.conf.json.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -38,13 +39,28 @@ fn set(app: &AppHandle, state: &str, version: Option<&str>, message: Option<Stri
     let _ = app.emit("update-state", status);
 }
 
-pub fn spawn(app: AppHandle) {
+/// Uma verificação por vez (a automática ao abrir ou a do botão "Procurar atualização")
+static RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// Procura e instala atualização em segundo plano. Devolve false se já tiver uma em andamento.
+pub fn spawn(app: AppHandle) -> bool {
+    if RUNNING.swap(true, Ordering::SeqCst) {
+        return false;
+    }
     tauri::async_runtime::spawn(async move {
         if let Err(err) = run(&app).await {
             log::warn!("atualização falhou: {err}");
             set(&app, "error", None, Some(err.to_string()));
         }
+        RUNNING.store(false, Ordering::SeqCst);
     });
+    true
+}
+
+/// Botão "Procurar atualização" nas configurações: verifica agora e instala se tiver versão nova.
+#[tauri::command]
+pub fn check_update(app: AppHandle) -> bool {
+    spawn(app)
 }
 
 async fn run(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {

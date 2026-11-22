@@ -35,6 +35,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             server::app_version,
             updater::update_status,
+            updater::check_update,
             server::get_server,
             server::set_server,
             stream::list_monitors,
@@ -47,7 +48,7 @@ pub fn run() {
         ])
         .setup(|app| {
             server::open_main_window(app.handle())?;
-            updater::spawn(app.handle().clone());
+            let _ = updater::spawn(app.handle().clone());
             hotkeys::register(app.handle());
             Ok(())
         })

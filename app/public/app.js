@@ -18,7 +18,7 @@ const QUALITY = {
 };
 
 // Versão do site (aparece no painel; ajuda a saber se o app pegou o código novo)
-const SITE_VERSION = '2026-11-22.9';
+const SITE_VERSION = '2026-11-22.10';
 
 const $ = (sel) => document.querySelector(sel);
 const state = {
@@ -1803,14 +1803,37 @@ async function setupDesktop() {
     $('#build').textContent = base;
     // Atualização automática: o app avisa aqui enquanto baixa/instala a versão nova
     const UPDATE_TEXT = {
+      checking: () => 'procurando atualização…',
       downloading: (v) => `baixando a versão ${v}…`,
       waiting: (v) => `versão ${v} pronta: instala quando você parar de transmitir`,
       installing: (v) => `instalando a versão ${v}, o app vai reabrir…`,
     };
+    const btn = $('#btn-update');
+    btn.hidden = false;
+    let manualCheck = false; // só avisa "já está atualizado" quando foi pelo botão
     const showUpdate = (s) => {
       const text = s && UPDATE_TEXT[s.state]?.(s.version);
       $('#build').textContent = text ? `${base} • ${text}` : base;
+      btn.disabled = ['checking', 'downloading', 'installing'].includes(s?.state);
+      if (manualCheck && s?.state === 'none') {
+        manualCheck = false;
+        toast(`Você já está na versão mais nova (${version}).`);
+      }
+      if (manualCheck && s?.state === 'error') {
+        manualCheck = false;
+        toast(`Não deu para atualizar: ${s.message || 'erro desconhecido'}`, true);
+      }
     };
+    btn.addEventListener('click', async () => {
+      try {
+        manualCheck = true;
+        const started = await desktop.core.invoke('check_update');
+        if (!started) toast('Já estou procurando/baixando a atualização, só um instante.');
+      } catch {
+        manualCheck = false; // app antigo, sem o comando: ele procura sozinho ao abrir
+        toast('Feche e abra o app: ele procura a versão nova sempre que abre.');
+      }
+    });
     desktop.core.invoke('update_status').then(showUpdate).catch(() => {});
     desktop.event.listen('update-state', (e) => showUpdate(e.payload)).catch(() => {});
   } catch {
