@@ -484,15 +484,6 @@ textarea { resize: vertical; }
   .profile-head { padding: 16px; }
 }
 
-/* live começa muda: botão pra ativar o som */
-.tile-unmute {
-  position: absolute; z-index: 2; top: 56px; left: 50%; transform: translateX(-50%);
-  display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 16px; border-radius: 999px;
-  border: 0; cursor: pointer; font: inherit; font-size: 13px; font-weight: 800;
-  background: var(--accent); color: var(--accent-ink); box-shadow: 0 8px 24px #0008;
-  animation: in .25s ease-out;
-}
-.tile-unmute:hover { background: var(--accent-2); }
 
 /* picture-in-picture: a live está na janela flutuante */
 .tile-pip-note {
@@ -521,4 +512,3 @@ body.mini-mode .tile.mini-target {
 body.mini-mode .tile.mini-target :is(.ctl-volume, .ctl-quality, .clip-wrap, .ctl-focus, .ctl-full, .ctl-stop, .tile-res) { display: none !important; }
 body.mini-mode .tile-top { top: 8px; left: 8px; right: 8px; }
 body.mini-mode .tile-controls { left: 8px; right: auto; bottom: 8px; }
-body.mini-mode .tile-unmute { top: 40px; }

@@ -18,7 +18,7 @@ const QUALITY = {
 };
 
 // Versão do site (aparece no painel; ajuda a saber se o app pegou o código novo)
-const SITE_VERSION = '2026-11-22.6';
+const SITE_VERSION = '2026-11-22.7';
 
 const $ = (sel) => document.querySelector(sel);
 const state = {
@@ -558,13 +558,6 @@ function ensureTile(id, name, isLocal = false) {
     tile.muted = !tile.muted;
     applyVolume(tile);
   });
-  el.querySelector('.tile-unmute').addEventListener('click', (e) => {
-    e.stopPropagation();
-    tile.muted = false;
-    if (tile.volume === 0) tile.volume = 1;
-    volume.value = String(tile.volume);
-    applyVolume(tile);
-  });
   quality.addEventListener('change', () => {
     tile.quality = quality.value;
     store.set('quality', tile.quality);
@@ -651,7 +644,6 @@ function layout() {
 function applyVolume(tile) {
   const mute = tile.el.querySelector('.ctl-mute');
   mute.textContent = tile.muted || tile.volume === 0 ? '🔇' : '🔊';
-  tile.el.querySelector('.tile-unmute').hidden = !(tile.audioTrack && (tile.muted || tile.volume === 0));
   tile.audioTrack?.setVolume(tile.muted ? 0 : tile.volume);
 }
 
