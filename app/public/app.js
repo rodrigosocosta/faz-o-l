@@ -18,7 +18,7 @@ const QUALITY = {
 };
 
 // Versão do site (aparece no painel; ajuda a saber se o app pegou o código novo)
-const SITE_VERSION = '2026-11-22.14';
+const SITE_VERSION = '2026-11-22.15';
 
 const $ = (sel) => document.querySelector(sel);
 const state = {
@@ -439,6 +439,7 @@ function wireRoom(room) {
       loadEvent();
     })
     .on(RoomEvent.RoomMetadataChanged, onRoomMetadata)
+    .on(RoomEvent.DataReceived, onEventSyncData)
     .on(RoomEvent.Disconnected, (reason) => {
       if (state.leaving) return;
       state.room = null;
@@ -2313,6 +2314,7 @@ function ensureEventTile() {
   el.innerHTML = `
     <div class="event-player"><div></div></div>
     <div class="event-shield"></div>
+    <div class="ev-sync" hidden></div>
     <div class="tile-top">
       <span class="badge-live badge-event">EVENTO</span>
       <span class="tile-name"></span>
@@ -2442,6 +2444,7 @@ async function ensureEventPlayer() {
   ev.timer = setInterval(() => {
     syncEventPlayer(false);
     renderEventTime();
+    if (++ev.ticks % 2 === 0) reportEventSync();
   }, 1000);
 }
 
@@ -2576,3 +2579,75 @@ $('#form-event').addEventListener('submit', async (e) => {
     btn.disabled = false;
   }
 });
+
+// ---------------- evento: confirmação de que todo mundo está no mesmo ponto ----------------
+// A cada 2 s cada player conta pra sala (mensagem de dados do LiveKit) quão longe está do
+// ponto certo. O selo no canto do evento mostra "✓ Todos sincronizados" ou quem escapou.
+
+const SYNC_TOPIC = 'event-sync';
+const syncReports = new Map(); // dono (id da pessoa) -> { name, drift, state, at }
+ev.ticks = 0;
+
+/** Distância (s) do ponto certo: + adiantado, - atrasado. null = ainda não dá pra medir. */
+function eventDrift() {
+  const p = ev.player;
+  const d = ev.data;
+  if (!p || !ev.ready || !d || !window.YT) return { drift: null, state: 'loading' };
+  const S = window.YT.PlayerState;
+  const st = p.getPlayerState();
+  if (isEventLive() && !d.live) return { drift: null, state: 'calibrating' };
+  if (st === S.ENDED) return { drift: 0, state: 'ended' };
+  if (st === S.BUFFERING) return { drift: p.getCurrentTime() - eventTarget(d), state: 'buffering' };
+  const playing = st === S.PLAYING;
+  if (playing !== d.playing) return { drift: p.getCurrentTime() - eventTarget(d), state: 'mismatch' };
+  return { drift: p.getCurrentTime() - eventTarget(d), state: playing ? 'playing' : 'paused' };
+}
+
+function reportEventSync() {
+  if (!state.room || !ev.data) return;
+  const report = { ...eventDrift(), event: ev.data.id };
+  const me = state.me;
+  syncReports.set(me.id, { name: me.name, ...report, at: Date.now() });
+  const payload = new TextEncoder().encode(JSON.stringify(report));
+  state.room.localParticipant.publishData(payload, { reliable: false, topic: SYNC_TOPIC }).catch(() => {});
+  renderEventSync();
+}
+
+function onEventSyncData(payload, participant, _kind, topic) {
+  if (topic !== SYNC_TOPIC || !participant) return;
+  try {
+    const report = JSON.parse(new TextDecoder().decode(payload));
+    if (!ev.data || report.event !== ev.data.id) return;
+    syncReports.set(ownerOf(participant.identity), { name: participant.name || participant.identity, ...report, at: Date.now() });
+    renderEventSync();
+  } catch { /* mensagem de outra coisa */ }
+}
+
+function renderEventSync() {
+  const tile = state.tiles.get(EVENT_TILE);
+  if (!tile || !state.room) return;
+  const badge = tile.el.querySelector('.ev-sync');
+  const now = Date.now();
+  const tolerance = isEventLive() ? 2.5 : 1.5;
+  const people = participants();
+  const rows = people.map((p) => {
+    const owner = ownerOf(p.identity);
+    const r = syncReports.get(owner);
+    const name = p.name || owner;
+    if (!r || r.event !== ev.data?.id || now - r.at > 8000) return { name, ok: false, text: 'carregando o vídeo…' };
+    if (r.state === 'loading' || r.state === 'calibrating') return { name, ok: false, text: 'entrando no ponto certo…' };
+    if (r.state === 'buffering') return { name, ok: false, text: 'carregando (internet lenta)' };
+    if (r.state === 'mismatch') return { name, ok: false, text: 'tocando/pausado diferente, ajustando…' };
+    const off = Math.abs(r.drift);
+    if (off <= tolerance) return { name, ok: true, text: `${off < 0.1 ? 'no ponto' : `${off.toFixed(1)} s`}` };
+    return { name, ok: false, text: `${off.toFixed(1)} s ${r.drift > 0 ? 'adiantado' : 'atrasado'}, ajustando…` };
+  });
+  const synced = rows.filter((r) => r.ok).length;
+  const all = synced === rows.length && rows.length > 0;
+  badge.hidden = rows.length === 0;
+  badge.classList.toggle('ok', all);
+  badge.textContent = all
+    ? `✓ ${rows.length === 1 ? 'Sincronizado' : `Todos sincronizados (${rows.length})`}`
+    : `⟳ ${synced} de ${rows.length} sincronizados`;
+  badge.title = rows.map((r) => `${r.ok ? '✓' : '…'} ${r.name}: ${r.text}`).join('\n');
+}

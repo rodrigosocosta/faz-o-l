@@ -532,3 +532,13 @@ body.mini-mode .tile-controls { left: 8px; right: auto; bottom: 8px; }
   padding: 8px 16px; border-radius: 999px; background: var(--glass); font-weight: 800; font-size: 14px;
 }
 @media (max-width: 760px) { .tile-event .ev-seek { display: none; } }
+/* evento: título só ao passar o mouse; selo de sincronia sempre visível */
+.tile-event .tile-top { opacity: 0; transition: opacity .2s; }
+.tile-event:hover .tile-top, .tile-event.touch .tile-top, .tile-event:focus-within .tile-top { opacity: 1; }
+.ev-sync {
+  position: absolute; z-index: 2; top: 12px; right: 12px; padding: 4px 10px; border-radius: 999px; cursor: help;
+  font-size: 11px; font-weight: 800; background: var(--glass); color: var(--muted);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); white-space: nowrap;
+}
+.ev-sync.ok { color: var(--accent); }
+.tile-event:hover .ev-sync, .tile-event.touch .ev-sync { top: 48px; }
