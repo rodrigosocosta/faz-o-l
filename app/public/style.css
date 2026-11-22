@@ -514,3 +514,21 @@ body.mini-mode .tile-controls { left: 8px; right: auto; bottom: 8px; }
 .clip-key.error { border-color: var(--red); }
 .clip-key-error { grid-column: 2; font-size: 11px; color: var(--red); }
 @keyframes pulse { 50% { opacity: .55; } }
+
+/* evento: YouTube assistido junto */
+.tile-event .event-player { position: absolute; inset: 0; background: #000; }
+.tile-event .event-player iframe { width: 100%; height: 100%; border: 0; display: block; }
+/* Ninguém mexe direto no player do YouTube: tudo passa pelos controles do evento */
+.tile-event .event-shield { position: absolute; inset: 0; z-index: 1; }
+.tile-event .tile-top, .tile-event .tile-controls { z-index: 2; }
+.badge-event { background: var(--accent); color: var(--accent-ink); }
+.tile-event .tile-name { max-width: 70%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile-event .ev-play { padding: 0; width: 34px; }
+.tile-event .ev-seek { flex: 1; min-width: 60px; padding: 0; accent-color: var(--accent); background: transparent; border: 0; }
+.tile-event .ev-time { font-size: 12px; font-weight: 700; color: var(--text); white-space: nowrap; padding: 0 4px; }
+.tile-event .ev-stop { background: var(--red); }
+.tile-event.paused .event-shield::after {
+  content: "⏸ Pausado"; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  padding: 8px 16px; border-radius: 999px; background: var(--glass); font-weight: 800; font-size: 14px;
+}
+@media (max-width: 760px) { .tile-event .ev-seek { display: none; } }

@@ -109,6 +109,29 @@ assert.match(page.text, /og:title" content="Que jogada @dono!"/);
 assert.match((await call(null, 'GET', `/c/${channel.id}`)).text, /<title>Faz o L<\/title>/);
 assert.match((await call(null, 'GET', '/u/dono')).text, /view-profile/);
 
+// Evento (YouTube junto)
+const { youtubeId } = await import('./src/events.js');
+assert.equal(youtubeId('https://www.youtube.com/watch?v=wpBaB5NN3Nk'), 'wpBaB5NN3Nk');
+assert.equal(youtubeId('https://youtu.be/wpBaB5NN3Nk?t=10'), 'wpBaB5NN3Nk');
+assert.equal(youtubeId('youtube.com/live/wpBaB5NN3Nk'), 'wpBaB5NN3Nk');
+assert.equal(youtubeId('https://exemplo.com/watch?v=wpBaB5NN3Nk'), null);
+const evUrl = `/api/c/${channel.id}/event`;
+assert.equal((await call(stranger, 'POST', evUrl, { url: 'wpBaB5NN3Nk' })).status, 403);
+assert.equal((await call(friend, 'POST', evUrl, { url: 'nada' })).status, 400);
+const started = (await call(friend, 'POST', evUrl, { url: 'https://www.youtube.com/watch?v=wpBaB5NN3Nk', title: 'Final' })).json;
+assert.equal(started.event.videoId, 'wpBaB5NN3Nk');
+assert.equal(started.event.title, 'Final');
+assert.equal(started.event.playing, true);
+// Só quem começou ou o dono controla
+assert.equal((await call(stranger, 'PATCH', evUrl, { action: 'pause' })).status, 403);
+const paused = (await call(friend, 'PATCH', evUrl, { action: 'pause', position: 42 })).json.event;
+assert.equal(paused.playing, false);
+assert.equal(paused.position, 42);
+assert.equal((await call(owner, 'GET', evUrl)).json.event.position, 42);
+assert.equal((await call(owner, 'PATCH', evUrl, { action: 'play' })).json.event.playing, true);
+assert.equal((await call(owner, 'DELETE', evUrl)).status, 200);
+assert.equal((await call(friend, 'GET', evUrl)).json.event, null);
+
 // Dono remove membro
 assert.equal((await call(owner, 'DELETE', `/api/c/${channel.id}/members/${friend.id}`)).status, 200);
 assert.equal((await call(friend, 'GET', `/api/c/${channel.id}`)).status, 403);

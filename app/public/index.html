@@ -189,6 +189,7 @@
           <label class="check"><input type="checkbox" id="opt-audio" checked /> Transmitir som</label>
           <p class="hint" id="browser-audio-hint">No Windows, marque <b>“Compartilhar áudio do sistema”</b> ao escolher a tela. Em aba do Chrome, marque <b>“Compartilhar áudio da guia”</b>.</p>
           <button id="btn-stream" class="btn btn-live btn-block">Transmitir minha tela</button>
+          <button id="btn-event" class="btn btn-block">🎬 Começar evento do YouTube</button>
           <p id="slots" class="hint center-text"></p>
         </div>
 
@@ -198,6 +199,24 @@
       </aside>
     </div>
   </section>
+
+  <!-- Evento: vídeo ou live do YouTube assistido junto -->
+  <dialog id="dlg-event" class="dialog">
+    <form id="form-event" class="stack">
+      <h2>🎬 Evento</h2>
+      <p class="hint">Todo mundo na sala assiste o mesmo vídeo ou live do YouTube, no mesmo ponto. Ninguém precisa transmitir a tela. Você controla tocar, pausar, pular e encerrar.</p>
+      <label class="field">Link do YouTube
+        <input id="event-url" required placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" />
+      </label>
+      <label class="field">Nome do evento (opcional)
+        <input id="event-title" maxlength="100" placeholder="Usa o título do vídeo se ficar vazio" autocomplete="off" />
+      </label>
+      <div class="row-end">
+        <button type="button" id="event-cancel" class="btn btn-ghost">Cancelar</button>
+        <button type="submit" id="event-start" class="btn btn-primary">Começar</button>
+      </div>
+    </form>
+  </dialog>
 
   <!-- Título e descrição do clipe -->
   <dialog id="dlg-clip" class="dialog">

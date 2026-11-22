@@ -18,7 +18,7 @@ const QUALITY = {
 };
 
 // Versão do site (aparece no painel; ajuda a saber se o app pegou o código novo)
-const SITE_VERSION = '2026-11-22.12';
+const SITE_VERSION = '2026-11-22.13';
 
 const $ = (sel) => document.querySelector(sel);
 const state = {
@@ -387,6 +387,7 @@ async function join() {
 
     await room.connect(livekitUrl(url), token);
     await room.startAudio().catch(() => {});
+    loadEvent();
 
     show('view-room');
     // Reabre o último painel (na 1ª vez, "Transmitir" em tela grande)
@@ -433,7 +434,11 @@ function wireRoom(room) {
       if (!room.canPlaybackAudio) toast('Clique em qualquer lugar da página para liberar o som.');
     })
     .on(RoomEvent.Reconnecting, () => toast('Conexão instável, reconectando…'))
-    .on(RoomEvent.Reconnected, () => toast('Reconectado!'))
+    .on(RoomEvent.Reconnected, () => {
+      toast('Reconectado!');
+      loadEvent();
+    })
+    .on(RoomEvent.RoomMetadataChanged, onRoomMetadata)
     .on(RoomEvent.Disconnected, (reason) => {
       if (state.leaving) return;
       state.room = null;
@@ -622,8 +627,9 @@ function ensureTile(id, name, isLocal = false) {
 function removeTile(id) {
   const tile = state.tiles.get(id);
   if (!tile) return;
-  if (pipElement() === tile.video) exitPip();
+  if (tile.video && pipElement() === tile.video) exitPip();
   if (state.mini === id) setMiniMode(null);
+  if (tile.isEvent) destroyEventPlayer();
   tile.el.remove();
   state.tiles.delete(id);
   if (state.focus === id) state.focus = null;
@@ -683,7 +689,7 @@ function pipSupported(video) {
 function pipElement() {
   if (document.pictureInPictureElement) return document.pictureInPictureElement;
   for (const tile of state.tiles.values()) {
-    if (tile.video.webkitPresentationMode === 'picture-in-picture') return tile.video;
+    if (tile.video?.webkitPresentationMode === 'picture-in-picture') return tile.video;
   }
   return null;
 }
@@ -730,7 +736,7 @@ async function setMiniMode(id) {
 function exitPip() {
   if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
   for (const tile of state.tiles.values()) {
-    if (tile.video.webkitPresentationMode === 'picture-in-picture') tile.video.webkitSetPresentationMode('inline');
+    if (tile.video?.webkitPresentationMode === 'picture-in-picture') tile.video.webkitSetPresentationMode('inline');
   }
 }
 
@@ -744,8 +750,8 @@ function setPipState(tile, on) {
 try {
   navigator.mediaSession?.setActionHandler('enterpictureinpicture', () => {
     const tile = (state.focus && state.tiles.get(state.focus))
-      || [...state.tiles.values()].find((t) => !t.isLocal);
-    if (tile) togglePip(tile);
+      || [...state.tiles.values()].find((t) => !t.isLocal && !t.isEvent);
+    if (tile && !tile.isEvent) togglePip(tile);
   });
 } catch { /* navegador não suporta */ }
 
@@ -2082,9 +2088,11 @@ let hotkeyBusy = false;
 function clipTarget() {
   if (!state.room) return null;
   if (state.local || myAppStream()) return state.me.id;
+  // O evento (YouTube) não vira clipe: o gravador só pega as lives da sala
+  const lives = [...state.tiles.values()].filter((t) => !t.isEvent);
   let id = null;
-  if (state.focus && state.tiles.has(state.focus)) id = state.focus;
-  else if (state.tiles.size === 1) id = [...state.tiles.keys()][0];
+  if (state.focus && state.tiles.has(state.focus) && !state.tiles.get(state.focus).isEvent) id = state.focus;
+  else if (lives.length === 1) id = lives[0].id;
   return id === '__local__' ? state.me.id : id;
 }
 
@@ -2210,4 +2218,341 @@ setupDesktop();
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && state.mini) setMiniMode(null);
+});
+
+// ---------------- evento: YouTube assistido junto ----------------
+// Ninguém transmite: cada um toca o vídeo direto do YouTube e o servidor diz em que
+// segundo todo mundo deve estar (src/events.js). Quem começou o evento (ou o dono do
+// canal) controla tocar, pausar, pular e encerrar. Se alguém escapar mais de ~1,5 s
+// do ponto certo, o player volta sozinho pro lugar.
+
+const EVENT_TILE = '__event__';
+const ev = {
+  data: null, // { videoId, title, by, playing, position, updatedAt }
+  offset: 0, // relógio do servidor - relógio daqui
+  player: null,
+  videoId: null,
+  ready: false,
+  muted: true, // como as lives: começa sem som
+  volume: Number(store.get('event-volume', '80')),
+  timer: null,
+  seeking: false,
+};
+let ytApiPromise = null;
+
+function loadYouTubeApi() {
+  if (window.YT?.Player) return Promise.resolve(window.YT);
+  if (!ytApiPromise) {
+    ytApiPromise = new Promise((resolve, reject) => {
+      const previous = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => {
+        previous?.();
+        resolve(window.YT);
+      };
+      const script = document.createElement('script');
+      script.src = 'https://www.youtube.com/iframe_api';
+      script.onerror = () => {
+        ytApiPromise = null;
+        reject(new Error('Não consegui carregar o player do YouTube.'));
+      };
+      document.head.append(script);
+    });
+  }
+  return ytApiPromise;
+}
+
+const serverNow = () => Date.now() + ev.offset;
+const eventTarget = (d) => d.position + (d.playing ? (serverNow() - d.updatedAt) / 1000 : 0);
+const canControlEvent = () => !!ev.data && (ev.data.by.id === state.me?.id || state.channel?.role === 'owner');
+const fmtTime = (total) => {
+  const s = Math.max(0, Math.floor(total));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
+};
+
+async function loadEvent() {
+  if (!state.channel) return;
+  try {
+    const sent = Date.now();
+    const res = await api(ch('/event'));
+    ev.offset = res.now - Math.round((sent + Date.now()) / 2);
+    applyEvent(res.event);
+  } catch (err) {
+    console.warn('[evento]', err);
+  }
+}
+
+function onRoomMetadata(metadata) {
+  try {
+    const parsed = JSON.parse(metadata || '{}');
+    if ('event' in parsed) applyEvent(parsed.event);
+  } catch { /* metadados de outra coisa */ }
+}
+
+function applyEvent(data) {
+  const before = ev.data;
+  ev.data = data || null;
+  if (!ev.data) {
+    if (before && state.tiles.has(EVENT_TILE)) toast('O evento acabou.');
+    removeTile(EVENT_TILE);
+    return;
+  }
+  if (!before) toast(`🎬 Evento: ${ev.data.title}`);
+  const tile = ensureEventTile();
+  renderEventTile(tile);
+  ensureEventPlayer().then(() => syncEventPlayer(true)).catch((err) => toast(err.message, true));
+}
+
+function ensureEventTile() {
+  let tile = state.tiles.get(EVENT_TILE);
+  if (tile) return tile;
+  const el = document.createElement('div');
+  el.className = 'tile tile-event has-video';
+  el.innerHTML = `
+    <div class="event-player"><div></div></div>
+    <div class="event-shield"></div>
+    <div class="tile-top">
+      <span class="badge-live badge-event">EVENTO</span>
+      <span class="tile-name"></span>
+    </div>
+    <div class="tile-controls">
+      <div class="ctl-group">
+        <button class="ctl ctl-mute" title="Mutar/desmutar">🔇</button>
+        <input class="ctl-volume" type="range" min="0" max="100" step="1" title="Volume" />
+      </div>
+      <button class="ctl ev-play" title="Tocar/pausar pra todo mundo">⏸</button>
+      <input class="ev-seek" type="range" min="0" max="0" step="1" value="0" title="Pular pra todo mundo" />
+      <span class="ev-time"></span>
+      <span class="spacer"></span>
+      <button class="ctl ev-stop" title="Encerrar o evento pra todo mundo">■ Encerrar</button>
+      <button class="ctl ctl-focus" title="Destacar">⤢</button>
+      <button class="ctl ctl-full" title="Tela cheia">⛶</button>
+    </div>`;
+  tile = { id: EVENT_TILE, el, isEvent: true, video: null, publication: null };
+
+  const volume = el.querySelector('.ctl-volume');
+  volume.value = String(ev.volume);
+  volume.addEventListener('input', () => {
+    ev.volume = Number(volume.value);
+    ev.muted = ev.volume === 0;
+    store.set('event-volume', String(ev.volume));
+    applyEventVolume();
+  });
+  el.querySelector('.ctl-mute').addEventListener('click', () => {
+    ev.muted = !ev.muted;
+    if (!ev.muted && ev.volume === 0) {
+      ev.volume = 80;
+      volume.value = '80';
+    }
+    applyEventVolume();
+  });
+  el.querySelector('.ev-play').addEventListener('click', () => controlEvent(ev.data?.playing ? 'pause' : 'play'));
+  const seek = el.querySelector('.ev-seek');
+  seek.addEventListener('input', () => {
+    ev.seeking = true;
+    el.querySelector('.ev-time').textContent = `${fmtTime(Number(seek.value))} / ${fmtTime(Number(seek.max))}`;
+  });
+  seek.addEventListener('change', () => {
+    ev.seeking = false;
+    controlEvent('seek', Number(seek.value));
+  });
+  el.querySelector('.ev-stop').addEventListener('click', stopEvent);
+  el.querySelector('.ctl-focus').addEventListener('click', () => {
+    state.focus = state.focus === EVENT_TILE ? null : EVENT_TILE;
+    layout();
+  });
+  el.querySelector('.ctl-full').addEventListener('click', () => toggleFullscreen(el));
+  el.addEventListener('dblclick', (e) => {
+    if (!e.target.closest('.tile-controls')) toggleFullscreen(el);
+  });
+  el.addEventListener('touchstart', () => {
+    el.classList.add('touch');
+    clearTimeout(tile.touchTimer);
+    tile.touchTimer = setTimeout(() => el.classList.remove('touch'), 3500);
+  }, { passive: true });
+
+  state.tiles.set(EVENT_TILE, tile);
+  $('#stage').prepend(el);
+  layout();
+  return tile;
+}
+
+function renderEventTile(tile) {
+  const d = ev.data;
+  const control = canControlEvent();
+  tile.el.querySelector('.tile-name').textContent = `${d.title} • ${d.by.name}`;
+  tile.el.querySelector('.ev-play').hidden = !control;
+  tile.el.querySelector('.ev-play').textContent = d.playing ? '⏸' : '▶';
+  tile.el.querySelector('.ev-seek').hidden = !control || isEventLive();
+  tile.el.querySelector('.ev-stop').hidden = !control;
+  tile.el.classList.toggle('paused', !d.playing);
+}
+
+function isEventLive() {
+  const p = ev.player;
+  if (!p || !ev.ready) return false;
+  return !!p.getVideoData?.()?.isLive;
+}
+
+async function ensureEventPlayer() {
+  const YT = await loadYouTubeApi();
+  const tile = state.tiles.get(EVENT_TILE);
+  if (!tile || !ev.data) return;
+  if (ev.player && ev.videoId === ev.data.videoId) return;
+  ev.videoId = ev.data.videoId;
+  if (ev.player && ev.ready) {
+    ev.player.loadVideoById({ videoId: ev.videoId, startSeconds: eventTarget(ev.data) });
+    return;
+  }
+  ev.ready = false;
+  const holder = tile.el.querySelector('.event-player > div');
+  await new Promise((resolve) => {
+    ev.player = new YT.Player(holder, {
+      width: '100%',
+      height: '100%',
+      videoId: ev.videoId,
+      playerVars: {
+        autoplay: 1, mute: 1, controls: 0, disablekb: 1, rel: 0, playsinline: 1, iv_load_policy: 3,
+        start: Math.floor(eventTarget(ev.data)),
+      },
+      events: {
+        onReady: () => {
+          ev.ready = true;
+          applyEventVolume();
+          resolve();
+        },
+        onStateChange: () => renderEventTime(),
+        onError: (e) => {
+          const msgs = {
+            2: 'link inválido',
+            5: 'o player não conseguiu tocar',
+            100: 'vídeo não encontrado ou privado',
+            101: 'o dono do vídeo não deixa tocar fora do YouTube',
+            150: 'o dono do vídeo não deixa tocar fora do YouTube',
+          };
+          toast(`Evento: ${msgs[e.data] || `erro ${e.data} do YouTube`}.`, true);
+          resolve();
+        },
+      },
+    });
+  });
+  clearInterval(ev.timer);
+  ev.timer = setInterval(() => {
+    syncEventPlayer(false);
+    renderEventTime();
+  }, 1000);
+}
+
+function destroyEventPlayer() {
+  clearInterval(ev.timer);
+  ev.timer = null;
+  try { ev.player?.destroy(); } catch { /* já foi */ }
+  ev.player = null;
+  ev.videoId = null;
+  ev.ready = false;
+}
+
+let lastHardSync = 0;
+function syncEventPlayer(force) {
+  const p = ev.player;
+  const d = ev.data;
+  if (!p || !ev.ready || !d || !window.YT) return;
+  const S = window.YT.PlayerState;
+  const st = p.getPlayerState();
+  const live = isEventLive();
+  if (d.playing) {
+    if (st === S.PAUSED || st === S.CUED || st === S.UNSTARTED) p.playVideo();
+    if (!live && st !== S.ENDED) {
+      const target = eventTarget(d);
+      const duration = p.getDuration() || Infinity;
+      const drift = p.getCurrentTime() - target;
+      // Internet lenta: não fica pulando sem parar (no máximo a cada 4 s)
+      if (target < duration && (force || (Math.abs(drift) > 1.5 && Date.now() - lastHardSync > 4000))) {
+        lastHardSync = Date.now();
+        p.seekTo(target, true);
+      }
+    }
+  } else {
+    if (st === S.PLAYING || st === S.BUFFERING) p.pauseVideo();
+    if (!live && (force || Math.abs(p.getCurrentTime() - d.position) > 0.5)) p.seekTo(d.position, true);
+  }
+}
+
+function renderEventTime() {
+  const tile = state.tiles.get(EVENT_TILE);
+  const p = ev.player;
+  if (!tile || !p || !ev.ready || ev.seeking) return;
+  const live = isEventLive();
+  const time = tile.el.querySelector('.ev-time');
+  const seek = tile.el.querySelector('.ev-seek');
+  if (live) {
+    time.textContent = '🔴 AO VIVO';
+  } else {
+    const cur = p.getCurrentTime() || 0;
+    const dur = p.getDuration() || 0;
+    time.textContent = dur ? `${fmtTime(cur)} / ${fmtTime(dur)}` : fmtTime(cur);
+    seek.max = String(Math.floor(dur));
+    seek.value = String(Math.floor(cur));
+  }
+  seek.hidden = !canControlEvent() || live;
+}
+
+function applyEventVolume() {
+  const tile = state.tiles.get(EVENT_TILE);
+  if (tile) tile.el.querySelector('.ctl-mute').textContent = ev.muted || ev.volume === 0 ? '🔇' : '🔊';
+  const p = ev.player;
+  if (!p || !ev.ready) return;
+  p.setVolume(ev.volume);
+  if (ev.muted || ev.volume === 0) p.mute();
+  else p.unMute();
+}
+
+async function controlEvent(action, position) {
+  try {
+    const body = { action };
+    if (position !== undefined) body.position = position;
+    else if (ev.player && ev.ready && !isEventLive()) body.position = ev.player.getCurrentTime();
+    const res = await api(ch('/event'), { method: 'PATCH', body });
+    applyEvent(res.event);
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function stopEvent() {
+  if (!confirm('Encerrar o evento pra todo mundo?')) return;
+  try {
+    await api(ch('/event'), { method: 'DELETE' });
+    applyEvent(null);
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+// Começar evento (painel Transmitir → "Começar evento do YouTube")
+$('#btn-event').addEventListener('click', () => {
+  if (ev.data && !canControlEvent()) return toast(`Já tem um evento rolando (de ${ev.data.by.name}).`, true);
+  $('#event-url').value = '';
+  $('#event-title').value = '';
+  $('#dlg-event').showModal();
+  $('#event-url').focus();
+});
+$('#event-cancel').addEventListener('click', () => $('#dlg-event').close());
+$('#form-event').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = $('#event-start');
+  btn.disabled = true;
+  try {
+    const sent = Date.now();
+    const res = await api(ch('/event'), { method: 'POST', body: { url: $('#event-url').value, title: $('#event-title').value } });
+    ev.offset = res.now - Math.round((sent + Date.now()) / 2);
+    $('#dlg-event').close();
+    applyEvent(res.event);
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    btn.disabled = false;
+  }
 });

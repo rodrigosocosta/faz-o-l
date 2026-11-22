@@ -7,6 +7,7 @@ import { authRouter, sessionMiddleware } from './auth.js';
 import { canCreateChannels, channelsRouter, migrateLegacy } from './channels.js';
 import { livekitRouter } from './livekit.js';
 import { clipsRouter } from './clips.js';
+import { eventsRouter } from './events.js';
 import { startBot } from './bot.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -27,6 +28,7 @@ app.use(authRouter());
 app.use(channelsRouter());
 app.use(livekitRouter());
 app.use(await clipsRouter());
+app.use(eventsRouter());
 
 app.get('/api/me', (req, res) => {
   res.json({

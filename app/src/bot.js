@@ -231,6 +231,32 @@ export async function startBot() {
     msg.edit({ embeds: [embed], components: [] }).catch(() => {});
   });
 
+  // Evento (YouTube assistido junto): avisa no canal de avisos e marca como encerrado depois
+  const eventMessages = new Map(); // id do canal -> mensagem
+  liveEvents.on('event:start', async ({ channel, event }) => {
+    const target = await textChannel(channel.notify_channel_id);
+    if (!target) return;
+    const embed = new EmbedBuilder()
+      .setColor(COLOR_LIVE)
+      .setTitle(`🎬 Evento: ${event.title}`.slice(0, 256))
+      .setURL(channelUrl(channel))
+      .setDescription(`${event.by.name} começou um evento. Todo mundo assiste junto, no mesmo ponto do vídeo.`)
+      .setThumbnail(`https://i.ytimg.com/vi/${event.videoId}/hqdefault.jpg`)
+      .setTimestamp();
+    try {
+      eventMessages.set(channel.id, await target.send({ embeds: [embed], components: [watchButton(channel)] }));
+    } catch (err) {
+      console.error('[bot] Falha ao avisar evento:', err.message);
+    }
+  });
+  liveEvents.on('event:end', ({ channel, event }) => {
+    const msg = eventMessages.get(channel.id);
+    if (!msg) return;
+    eventMessages.delete(channel.id);
+    const embed = new EmbedBuilder().setColor(COLOR_ENDED).setTitle(`Evento encerrado: ${event.title}`.slice(0, 256)).setTimestamp();
+    msg.edit({ embeds: [embed], components: [] }).catch(() => {});
+  });
+
   // Cada clipe vai pro canal de clipes (ou de avisos); o link abre o vídeo embutido no Discord.
   // As pessoas marcadas com @ no título/descrição recebem a menção.
   /** Texto do post do clipe: título, quem clipou, descrição e link (com versão, pro Discord refazer a prévia). */
