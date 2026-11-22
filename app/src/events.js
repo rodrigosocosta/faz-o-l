@@ -111,6 +111,9 @@ export function eventsRouter() {
     if (action === 'pause') ev.playing = false;
     else if (action === 'play') ev.playing = true;
     else if (action !== 'seek') return res.status(400).json({ error: 'Ação inválida.' });
+    // Live do YouTube: a posição passa a ser o "tempo da live" do player de quem controla
+    // (o mesmo para todo mundo), em vez de segundos desde o começo do evento.
+    if (req.body?.live === true) ev.live = true;
     ev.updatedAt = now;
     await broadcast(channel);
     res.json({ event: publicEvent(ev), now });

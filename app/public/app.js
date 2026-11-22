@@ -18,7 +18,7 @@ const QUALITY = {
 };
 
 // Versão do site (aparece no painel; ajuda a saber se o app pegou o código novo)
-const SITE_VERSION = '2026-11-22.13';
+const SITE_VERSION = '2026-11-22.14';
 
 const $ = (sel) => document.querySelector(sel);
 const state = {
@@ -2455,6 +2455,7 @@ function destroyEventPlayer() {
 }
 
 let lastHardSync = 0;
+let calibratingLive = false;
 function syncEventPlayer(force) {
   const p = ev.player;
   const d = ev.data;
@@ -2462,21 +2463,39 @@ function syncEventPlayer(force) {
   const S = window.YT.PlayerState;
   const st = p.getPlayerState();
   const live = isEventLive();
+  // Live: quem controla manda o "tempo da live" do player dele (igual pra todo mundo).
+  // Até isso chegar, cada um fica na ponta da live, sem pular.
+  if (live && !d.live) {
+    // O "start" do player é em segundos desde o começo do evento: numa live isso cai no
+    // começo da gravação. Vai pra ponta da live (o YouTube limita o pulo ao que existe).
+    if (ev.edgeFor !== ev.videoId) {
+      ev.edgeFor = ev.videoId;
+      p.seekTo(1e9, true);
+      return;
+    }
+    if (canControlEvent() && st === S.PLAYING && !calibratingLive) {
+      calibratingLive = true;
+      controlEvent(d.playing ? 'play' : 'pause', p.getCurrentTime(), true).finally(() => { calibratingLive = false; });
+    }
+    if (d.playing && (st === S.PAUSED || st === S.CUED || st === S.UNSTARTED)) p.playVideo();
+    return;
+  }
+  const tolerance = live ? 2.5 : 1.5;
   if (d.playing) {
     if (st === S.PAUSED || st === S.CUED || st === S.UNSTARTED) p.playVideo();
-    if (!live && st !== S.ENDED) {
+    if (st !== S.ENDED) {
       const target = eventTarget(d);
-      const duration = p.getDuration() || Infinity;
+      const duration = live ? Infinity : p.getDuration() || Infinity;
       const drift = p.getCurrentTime() - target;
       // Internet lenta: não fica pulando sem parar (no máximo a cada 4 s)
-      if (target < duration && (force || (Math.abs(drift) > 1.5 && Date.now() - lastHardSync > 4000))) {
+      if (target < duration && (force || (Math.abs(drift) > tolerance && Date.now() - lastHardSync > 4000))) {
         lastHardSync = Date.now();
         p.seekTo(target, true);
       }
     }
   } else {
     if (st === S.PLAYING || st === S.BUFFERING) p.pauseVideo();
-    if (!live && (force || Math.abs(p.getCurrentTime() - d.position) > 0.5)) p.seekTo(d.position, true);
+    if (force || Math.abs(p.getCurrentTime() - d.position) > 0.5) p.seekTo(d.position, true);
   }
 }
 
@@ -2509,11 +2528,12 @@ function applyEventVolume() {
   else p.unMute();
 }
 
-async function controlEvent(action, position) {
+async function controlEvent(action, position, live = false) {
   try {
     const body = { action };
+    if (live) body.live = true;
     if (position !== undefined) body.position = position;
-    else if (ev.player && ev.ready && !isEventLive()) body.position = ev.player.getCurrentTime();
+    else if (ev.player && ev.ready && (!isEventLive() || ev.data?.live)) body.position = ev.player.getCurrentTime();
     const res = await api(ch('/event'), { method: 'PATCH', body });
     applyEvent(res.event);
   } catch (err) {
