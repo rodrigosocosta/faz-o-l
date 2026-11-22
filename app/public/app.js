@@ -18,7 +18,7 @@ const QUALITY = {
 };
 
 // Versão do site (aparece no painel; ajuda a saber se o app pegou o código novo)
-const SITE_VERSION = '2026-11-22.15';
+const SITE_VERSION = '2026-11-22.16';
 
 const $ = (sel) => document.querySelector(sel);
 const state = {
@@ -1308,42 +1308,9 @@ function clipRow(clip, onClick) {
   return li;
 }
 
-/** Linha do tempo na base da sala: miniaturas dos clipes recentes (abrem a janela grande). */
+/** Contador de clipes no ícone ✂ da barra da esquerda (que abre a janela de clipes). */
 function renderClipsPanel(clips) {
   $('#clips-count').textContent = clips.length ? String(clips.length) : '';
-  $('#btn-clips').textContent = clips.length ? `Ver todos (${clips.length})` : 'Ver todos';
-  const list = $('#clips');
-  if (!clips.length) {
-    const li = document.createElement('li');
-    li.className = 'tl-empty';
-    li.textContent = 'Nenhum clipe ainda — use os botões ao lado ou os atalhos.';
-    return list.replaceChildren(li);
-  }
-  // Mantém as miniaturas já carregadas (a lista recarrega a cada 30 s)
-  const old = new Map([...list.children].map((li) => [li.dataset.id, li]));
-  list.replaceChildren(
-    ...clips.slice(0, 20).map((clip) => {
-      const key = `${clip.id}|${clip.title}`;
-      const existing = old.get(clip.id);
-      if (existing?.dataset.key === key) return existing;
-      const li = document.createElement('li');
-      li.className = 'tl-clip';
-      li.tabIndex = 0;
-      li.dataset.id = clip.id;
-      li.dataset.key = key;
-      li.title = clip.title || `Live de ${clip.streamer.name}`;
-      const thumb = clipThumb(clip);
-      const title = document.createElement('span');
-      title.className = 'tl-title';
-      title.textContent = li.title;
-      li.append(...thumb.childNodes, title);
-      li.addEventListener('click', () => openClipsDialog(clip.id));
-      li.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') openClipsDialog(clip.id);
-      });
-      return li;
-    }),
-  );
 }
 
 function filteredClips() {
@@ -1406,7 +1373,6 @@ function openClipsDialog(id = null) {
   if (id) $('#clips-player').play().catch(() => {});
 }
 
-$('#btn-clips').addEventListener('click', () => openClipsDialog());
 $('#clips-close').addEventListener('click', () => $('#dlg-clips').close());
 $('#dlg-clips').addEventListener('close', () => $('#clips-player').pause());
 $('#dlg-clips').addEventListener('click', (e) => {

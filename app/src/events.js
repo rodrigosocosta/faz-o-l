@@ -11,11 +11,25 @@ import { config } from './config.js';
 import { requireUser } from './auth.js';
 import { memberRole, requireMember, roomName } from './channels.js';
 import { liveEvents } from './livekit.js';
+import { db, sql } from './db.js';
 
 const { host, apiKey, apiSecret } = config.livekit;
 const roomService = new RoomServiceClient(host, apiKey, apiSecret);
 
 const events = new Map(); // id do canal -> evento
+
+// Guardado no banco: reiniciar/atualizar o servidor não derruba o evento
+db.exec('CREATE TABLE IF NOT EXISTS events (channel_id TEXT PRIMARY KEY, data TEXT NOT NULL)');
+for (const row of sql('SELECT channel_id, data FROM events').all()) {
+  try {
+    events.set(row.channel_id, JSON.parse(row.data));
+  } catch {}
+}
+function saveEvent(channelId) {
+  const ev = events.get(channelId);
+  if (ev) sql('INSERT OR REPLACE INTO events (channel_id, data) VALUES (?, ?)').run(channelId, JSON.stringify(ev));
+  else sql('DELETE FROM events WHERE channel_id = ?').run(channelId);
+}
 
 /** Aceita link do YouTube (watch, youtu.be, shorts, live, embed) ou o id do vídeo. */
 export function youtubeId(input) {
@@ -57,6 +71,7 @@ async function videoTitle(videoId) {
 
 /** Avisa quem está na sala (metadados da sala; se ninguém estiver nela, não tem a quem avisar). */
 async function broadcast(channel) {
+  saveEvent(channel.id);
   const payload = JSON.stringify({ event: publicEvent(events.get(channel.id)) });
   await roomService.updateRoomMetadata(roomName(channel), payload).catch(() => {});
 }

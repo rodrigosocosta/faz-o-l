@@ -126,7 +126,7 @@ textarea { resize: vertical; }
   position: relative; height: 100%; overflow: hidden; isolation: isolate;
   border-radius: var(--shell-radius); background: #050504;
   box-shadow: 0 0 0 1px #ffffff10, var(--shadow);
-  --rail-w: 76px; --top-h: 76px; --dock-h: 128px; --drawer-w: 0px;
+  --rail-w: 76px; --top-h: 76px; --dock-h: 16px; --drawer-w: 0px;
 }
 .shell.drawer-open { --drawer-w: 372px; }
 
@@ -439,13 +439,13 @@ textarea { resize: vertical; }
 /* ---------- celular ---------- */
 @media (max-width: 760px) {
   .room { padding: 0; }
-  .shell { border-radius: 0; --rail-w: 0px; --top-h: 68px; --dock-h: 150px; }
+  .shell { border-radius: 0; --rail-w: 0px; --top-h: 68px; --dock-h: 80px; }
   .hud-top { top: 10px; left: 10px; right: 10px; gap: 6px; }
   .hud-center { justify-content: flex-start; overflow: hidden; }
   #pill-viewers { display: none; }
   .brand-pill strong { max-width: 34vw; }
   .pill { height: 40px; padding: 0 12px; }
-  .rail { top: auto; bottom: 90px; left: 50%; transform: translateX(-50%); flex-direction: row; padding: 6px; }
+  .rail { top: auto; bottom: 10px; left: 50%; transform: translateX(-50%); flex-direction: row; padding: 6px; }
   .rail-btn { width: 42px; height: 42px; }
   .dock { left: 10px; right: 10px; bottom: 10px; gap: 8px; }
   .timeline { height: 56px; border-radius: 18px; }
