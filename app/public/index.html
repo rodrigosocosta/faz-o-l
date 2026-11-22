@@ -189,7 +189,14 @@
           <p class="hint" id="browser-audio-hint">No Windows, marque <b>“Compartilhar áudio do sistema”</b> ao escolher a tela. Em aba do Chrome, marque <b>“Compartilhar áudio da guia”</b>.</p>
           <button id="btn-stream" class="btn btn-live btn-block">Transmitir minha tela</button>
           <p id="slots" class="hint center-text"></p>
-          <p class="hint" id="hotkeys-hint" hidden>Atalhos de clipe (mesmo dentro do jogo): <kbd>Ctrl+F9</kbd> 30 s • <kbd>Ctrl+F10</kbd> 1 min • <kbd>Ctrl+F11</kbd> 3 min.</p>
+          <div class="clip-settings" id="clip-settings">
+            <div class="clip-settings-head">
+              <strong>Botões de clipe</strong>
+              <button type="button" class="btn btn-ghost btn-sm" id="clip-settings-reset">Padrão</button>
+            </div>
+            <p class="hint" id="clip-settings-hint">Durações do menu ✂ Clipar.</p>
+            <ul id="clip-slots" class="clip-slots"></ul>
+          </div>
           <p id="build" class="hint center-text"></p>
         </div>
 

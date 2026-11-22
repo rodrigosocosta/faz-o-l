@@ -18,7 +18,7 @@ const QUALITY = {
 };
 
 // Versão do site (aparece no painel; ajuda a saber se o app pegou o código novo)
-const SITE_VERSION = '2026-11-22.8';
+const SITE_VERSION = '2026-11-22.9';
 
 const $ = (sel) => document.querySelector(sel);
 const state = {
@@ -595,6 +595,7 @@ function ensureTile(id, name, isLocal = false) {
   const clipMenu = el.querySelector('.clip-menu');
   el.querySelector('.ctl-clip').addEventListener('click', (e) => {
     e.stopPropagation();
+    if (clipMenu.hidden) fillClipMenu(clipMenu);
     clipMenu.hidden = !clipMenu.hidden;
     el.classList.toggle('clip-open', !clipMenu.hidden);
   });
@@ -1033,7 +1034,10 @@ document.addEventListener('click', () => {
 });
 
 let clipsTimer = null;
-const lengthLabel = (seconds) => (seconds >= 60 ? `${seconds / 60} min` : `${seconds} s`);
+const lengthLabel = (seconds) => {
+  const m = Math.floor(seconds / 60), s = seconds % 60;
+  return m ? (s ? `${m} min ${s} s` : `${m} min`) : `${s} s`;
+};
 
 async function createClip(streamer, seconds) {
   toast(`✂ Gerando clipe dos últimos ${lengthLabel(seconds)}…`);
@@ -1814,7 +1818,6 @@ async function setupDesktop() {
   }
   document.body.classList.add('is-desktop');
   $('#desktop-opts').hidden = false;
-  $('#hotkeys-hint').hidden = false;
   $('#browser-audio-hint').hidden = true;
   $('#opt-quality').innerHTML = `
     <option value="1440p60">1440p • 60 fps (rede forte)</option>
@@ -1876,9 +1879,169 @@ async function setupDesktop() {
     }
   });
 
-  // Atalhos globais (Ctrl+F9/F10/F11): clipa sem abrir o diálogo, porque você está no jogo
+  // Atalhos globais (padrão Ctrl+F9/F10/F11): clipa sem abrir o diálogo, porque você está no jogo
   await desktop.event.listen('clip-hotkey', ({ payload }) => hotkeyClip(Number(payload)));
+  await applyClipHotkeys();
 }
+
+// ---------------- botões de clipe configuráveis ----------------
+// Cada botão tem uma duração (menu ✂ Clipar) e, no app desktop, um atalho global.
+// Fica salvo neste aparelho.
+
+const DEFAULT_CLIP_SLOTS = [
+  { seconds: 30, key: 'Ctrl+F9' },
+  { seconds: 60, key: 'Ctrl+F10' },
+  { seconds: 180, key: 'Ctrl+F11' },
+];
+const CLIP_DURATIONS = [10, 15, 20, 30, 45, 60, 90, 120, 150, 180];
+let hotkeyErrors = {}; // atalho -> motivo (ex.: outro programa usa)
+let hotkeysSupported = true; // app antigo não tem o comando
+
+function clipSlots() {
+  try {
+    const saved = JSON.parse(store.get('clip-slots', 'null'));
+    if (Array.isArray(saved) && saved.length === 3) {
+      return saved.map((s, i) => ({
+        seconds: CLIP_DURATIONS.includes(Number(s.seconds)) ? Number(s.seconds) : DEFAULT_CLIP_SLOTS[i].seconds,
+        key: typeof s.key === 'string' ? s.key : '',
+      }));
+    }
+  } catch { /* volta pro padrão */ }
+  return DEFAULT_CLIP_SLOTS.map((s) => ({ ...s }));
+}
+
+function saveClipSlots(slots) {
+  store.set('clip-slots', JSON.stringify(slots));
+  renderClipSettings();
+  applyClipHotkeys();
+}
+
+/** "Ctrl+KeyK" -> "Ctrl+K" (como aparece na tela) */
+const keyLabel = (key) => key.replace(/Key([A-Z])$/, '$1').replace(/Digit(\d)$/, '$1');
+
+function fillClipMenu(menu) {
+  menu.replaceChildren(...clipSlots().map(({ seconds }) => {
+    const b = document.createElement('button');
+    b.dataset.seconds = String(seconds);
+    b.textContent = `Últimos ${lengthLabel(seconds)}`;
+    return b;
+  }));
+}
+
+async function applyClipHotkeys() {
+  if (!desktop) return;
+  const slots = clipSlots().filter((s) => s.key);
+  try {
+    const results = await desktop.core.invoke('set_clip_hotkeys', {
+      hotkeys: slots.map((s) => ({ shortcut: s.key, seconds: s.seconds })),
+    });
+    hotkeyErrors = Object.fromEntries(results.filter((r) => !r.ok).map((r) => [r.shortcut, r.error]));
+  } catch (err) {
+    console.warn('[atalhos]', err); // app antigo: ficam os atalhos fixos Ctrl+F9/F10/F11
+    hotkeysSupported = false;
+  }
+  renderClipSettings();
+}
+
+/** Converte uma tecla apertada no formato do app ("Ctrl+Shift+KeyK"). Precisa de Ctrl, Alt ou Shift, ou ser F1–F24. */
+function shortcutFromEvent(e) {
+  if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return null;
+  const mods = [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Super'].filter(Boolean);
+  const code = e.code;
+  const isF = /^F([1-9]|1\d|2[0-4])$/.test(code);
+  if (!code || (!mods.length && !isF)) return null;
+  return [...mods, code].join('+');
+}
+
+let capturing = null; // índice do botão esperando a tecla
+
+function renderClipSettings() {
+  const list = $('#clip-slots');
+  if (!list) return;
+  const slots = clipSlots();
+  const withKeys = desktop && hotkeysSupported;
+  $('#clip-settings-hint').textContent = !desktop
+    ? 'Durações do menu ✂ Clipar. No app desktop dá pra pôr um atalho em cada uma (funciona dentro do jogo).'
+    : hotkeysSupported
+      ? 'Durações do ✂ Clipar e atalhos que funcionam até dentro do jogo. Clique na tecla para trocar.'
+      : 'Atualize o app para trocar os atalhos (por enquanto: Ctrl+F9, Ctrl+F10 e Ctrl+F11).';
+  list.replaceChildren(...slots.map((slot, i) => {
+    const li = document.createElement('li');
+    li.className = 'clip-slot';
+
+    const select = document.createElement('select');
+    select.title = 'Duração do clipe';
+    for (const s of CLIP_DURATIONS) {
+      const o = document.createElement('option');
+      o.value = String(s);
+      o.textContent = lengthLabel(s);
+      select.append(o);
+    }
+    select.value = String(slot.seconds);
+    select.addEventListener('change', () => {
+      slots[i].seconds = Number(select.value);
+      saveClipSlots(slots);
+    });
+    li.append(select);
+
+    if (withKeys) {
+      const key = document.createElement('button');
+      key.type = 'button';
+      key.className = 'clip-key';
+      const error = slot.key && hotkeyErrors[slot.key];
+      key.classList.toggle('error', !!error);
+      key.classList.toggle('waiting', capturing === i);
+      key.textContent = capturing === i ? 'Aperte as teclas…' : slot.key ? keyLabel(slot.key) : 'Sem atalho';
+      key.title = error ? `Não funcionou: ${error}` : 'Clique e aperte o atalho (Esc cancela, Backspace remove)';
+      key.addEventListener('click', () => startCapture(i));
+      li.append(key);
+      if (error) {
+        const warn = document.createElement('span');
+        warn.className = 'clip-key-error';
+        warn.textContent = error;
+        li.append(warn);
+      }
+    }
+    return li;
+  }));
+}
+
+async function startCapture(index) {
+  capturing = index;
+  renderClipSettings();
+  // Enquanto escolhe, solta os atalhos (senão apertar Ctrl+F9 já clipa)
+  await desktop.core.invoke('set_clip_hotkeys', { hotkeys: [] }).catch(() => {});
+}
+
+document.addEventListener('keydown', (e) => {
+  if (capturing === null) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const slots = clipSlots();
+  if (e.key === 'Escape') {
+    capturing = null;
+    return applyClipHotkeys();
+  }
+  if (e.key === 'Backspace' || e.key === 'Delete') {
+    slots[capturing].key = '';
+  } else {
+    const shortcut = shortcutFromEvent(e);
+    if (!shortcut) return; // só modificador ainda, ou tecla sem Ctrl/Alt/Shift
+    // Mesmo atalho em outro botão: tira de lá
+    for (const s of slots) if (s.key === shortcut) s.key = '';
+    slots[capturing].key = shortcut;
+  }
+  capturing = null;
+  saveClipSlots(slots);
+}, true);
+
+$('#clip-settings-reset').addEventListener('click', () => {
+  capturing = null;
+  store.set('clip-slots', 'null');
+  renderClipSettings();
+  applyClipHotkeys();
+});
+renderClipSettings();
 
 let hotkeyBusy = false;
 

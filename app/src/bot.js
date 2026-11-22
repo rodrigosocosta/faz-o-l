@@ -24,7 +24,10 @@ const COLOR_ENDED = 0x4f545c;
 const UNKNOWN_GUILD_GRACE_MS = 60_000;
 
 const channelUrl = (channel) => `${config.publicUrl}/c/${channel.id}`;
-const lengthLabel = (seconds) => (seconds >= 60 ? `${seconds / 60} min` : `${seconds} s`);
+const lengthLabel = (seconds) => {
+  const m = Math.floor(seconds / 60), s = seconds % 60;
+  return m ? (s ? `${m} min ${s} s` : `${m} min`) : `${s} s`;
+};
 const iconUrl = (guild) => guild.iconURL({ size: 128, extension: 'png' }) || '';
 
 function watchButton(channel, label = 'Assistir agora') {

@@ -19,7 +19,9 @@ const CLIPS_DIR = process.env.CLIPS_DIR || '/data/clips';
 const RECORDER_URL = process.env.RECORDER_URL || 'http://recorder:8090';
 const UNSAVED_TTL_MS = 24 * 60 * 60 * 1000;
 const PUBLISH_FALLBACK_MS = 3 * 60 * 1000; // sem título em 3 min: posta no Discord assim mesmo
-const ALLOWED_SECONDS = [30, 60, 120, 180];
+// Duração do clipe: qualquer valor de 5 s a 3 min (configurável por quem clipa)
+const MIN_SECONDS = 5;
+const MAX_SECONDS = 180;
 const TITLE_MAX = 100;
 const DESCRIPTION_MAX = 500;
 
@@ -161,7 +163,10 @@ function setDetails(clip, { title, description }) {
 const escapeHtml = (s) =>
   String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
-const lengthLabel = (seconds) => (seconds >= 60 ? `${seconds / 60} min` : `${seconds} s`);
+const lengthLabel = (seconds) => {
+  const m = Math.floor(seconds / 60), s = seconds % 60;
+  return m ? (s ? `${m} min ${s} s` : `${m} min`) : `${s} s`;
+};
 
 /** Clipes que o usuário pode ver: dos canais em que ele é membro. */
 const VISIBLE = 'c.channel_id IN (SELECT channel_id FROM members WHERE user_id = ?)';
@@ -202,7 +207,9 @@ export async function clipsRouter() {
   router.post('/api/c/:cid/clips', ...member, express.json(), async (req, res) => {
     const seconds = Number(req.body?.seconds);
     const requested = String(req.body?.streamer || '');
-    if (!ALLOWED_SECONDS.includes(seconds)) return res.status(400).json({ error: 'Duração inválida.' });
+    if (!Number.isInteger(seconds) || seconds < MIN_SECONDS || seconds > MAX_SECONDS) {
+      return res.status(400).json({ error: `A duração do clipe vai de ${MIN_SECONDS} s a 3 min.` });
+    }
 
     // Aceita a identidade exata ou o id do dono (a live do app desktop é "<id>:tela")
     const state = await getRoomState(req.channel);

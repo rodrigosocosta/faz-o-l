@@ -13,6 +13,7 @@ fn main() {
             "start_stream",
             "stop_stream",
             "set_mini_mode",
+            "set_clip_hotkeys",
         ]),
     ))
     .expect("falha ao rodar tauri-build");

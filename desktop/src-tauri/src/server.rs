@@ -53,6 +53,7 @@ fn allow_remote(app: &AppHandle, origin: &Url) {
         .permission("allow-start-stream")
         .permission("allow-stop-stream")
         .permission("allow-set-mini-mode")
+        .permission("allow-set-clip-hotkeys")
         .permission("core:window:allow-start-dragging");
     if let Err(err) = app.add_capability(capability) {
         log::warn!("capability remota já registrada ou inválida: {err}");

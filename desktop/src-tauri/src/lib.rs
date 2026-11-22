@@ -31,6 +31,7 @@ pub fn run() {
         .manage(stream::StreamState::default())
         .manage(updater::UpdateState::default())
         .manage(mini::MiniState::default())
+        .manage(hotkeys::HotkeyState::default())
         .invoke_handler(tauri::generate_handler![
             server::app_version,
             updater::update_status,
@@ -42,6 +43,7 @@ pub fn run() {
             stream::start_stream,
             stream::stop_stream,
             mini::set_mini_mode,
+            hotkeys::set_clip_hotkeys,
         ])
         .setup(|app| {
             server::open_main_window(app.handle())?;

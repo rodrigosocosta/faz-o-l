@@ -495,3 +495,22 @@ body.mini-mode .tile.mini-target {
 body.mini-mode .tile.mini-target :is(.ctl-volume, .ctl-quality, .clip-wrap, .ctl-focus, .ctl-full, .ctl-stop, .tile-res) { display: none !important; }
 body.mini-mode .tile-top { top: 8px; left: 8px; right: 8px; }
 body.mini-mode .tile-controls { left: 8px; right: auto; bottom: 8px; }
+
+/* botões de clipe configuráveis (painel Transmitir) */
+.clip-settings { margin-top: 14px; padding: 12px; border-radius: 16px; background: #ffffff08; border: 1px solid var(--line-soft); display: grid; gap: 8px; }
+.clip-settings-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.clip-settings-head strong { font-size: 14px; }
+.clip-settings .hint { margin: 0; }
+.clip-slots { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.clip-slot { display: grid; grid-template-columns: 112px 1fr; gap: 6px; align-items: center; }
+.clip-slot:has(> :only-child) { grid-template-columns: 1fr; }
+.clip-slot select { height: 36px; }
+.clip-key {
+  height: 36px; padding: 0 12px; border-radius: 10px; cursor: pointer; font: inherit; font-size: 13px; font-weight: 700;
+  background: var(--bg-3); color: var(--text); border: 1px solid var(--line); border-bottom-width: 2px; text-align: left;
+}
+.clip-key:hover { border-color: var(--accent); }
+.clip-key.waiting { border-color: var(--accent); color: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+.clip-key.error { border-color: var(--red); }
+.clip-key-error { grid-column: 2; font-size: 11px; color: var(--red); }
+@keyframes pulse { 50% { opacity: .55; } }
