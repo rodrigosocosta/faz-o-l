@@ -548,6 +548,15 @@ func joinRoom(name string) {
 
 var joining = map[string]bool{} // salas com entrada em andamento (protegido por roomsMu)
 
+// Tira a sala do mapa, se ainda for a mesma conexão.
+func forgetRoom(name string, room *lksdk.Room) {
+	roomsMu.Lock()
+	if rooms[name] == room {
+		delete(rooms, name)
+	}
+	roomsMu.Unlock()
+}
+
 // Entra na sala em segundo plano, se ainda não estiver nela.
 func ensureJoined(name string) {
 	if name == "" {
@@ -595,6 +604,15 @@ func watchRooms() {
 			current[name] = room
 		}
 		roomsMu.Unlock()
+		// Conexão que caiu sem avisar (o OnDisconnected nem sempre é chamado): esquece
+		// a sala pra entrar de novo. Sem isso o gravador ficava fora da sala pra sempre.
+		for name, room := range current {
+			if room.ConnectionState() == lksdk.ConnectionStateDisconnected {
+				forgetRoom(name, room)
+				delete(current, name)
+				log.Printf("[%s] conexão caiu, entrando de novo", name)
+			}
+		}
 		for name := range live {
 			delete(idleSince, name)
 			ensureJoined(name)
@@ -608,6 +626,9 @@ func watchRooms() {
 			} else if time.Since(idleSince[name]) > 30*time.Second {
 				delete(idleSince, name)
 				room.Disconnect()
+				// Desconectar daqui não chama o OnDisconnected: tira do mapa na mão
+				forgetRoom(name, room)
+				log.Printf("[%s] saiu da sala (sem live)", name)
 			}
 		}
 	}

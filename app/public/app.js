@@ -18,7 +18,7 @@ const QUALITY = {
 };
 
 // Versão do site (aparece no painel; ajuda a saber se o app pegou o código novo)
-const SITE_VERSION = '2026-11-22.7';
+const SITE_VERSION = '2026-11-22.8';
 
 const $ = (sel) => document.querySelector(sel);
 const state = {
@@ -638,7 +638,6 @@ function layout() {
     tile.el.classList.toggle('is-focus', state.focus === tile.id);
     applyQuality(tile);
   }
-  updateClipPills();
 }
 
 function applyVolume(tile) {
@@ -806,7 +805,6 @@ function renderPresence() {
   $('#pill-live').classList.toggle('on', streamers.length > 0);
   $('#viewer-count').textContent = `${viewers}/${maxViewers}`;
   $('#people-count').textContent = String(all.length);
-  updateClipPills();
 
   const free = maxStreamers - streamers.length;
   const btn = $('#btn-stream');
@@ -1894,23 +1892,6 @@ function clipTarget() {
   return id === '__local__' ? state.me.id : id;
 }
 
-// Botões de clipe na base da sala (abrem o diálogo de título, como o ✂ da live)
-$('#clip-pills').addEventListener('click', (e) => {
-  const seconds = Number(e.target.closest('button')?.dataset.seconds);
-  if (!seconds) return;
-  const streamer = clipTarget();
-  if (!streamer) return toast('Coloque uma live em destaque (⤢) para escolher qual clipar.', true);
-  createClip(streamer, seconds);
-});
-function updateClipPills() {
-  const anyLive = state.tiles.size > 0 || !!state.local || !!myAppStream();
-  const target = clipTarget();
-  for (const b of $('#clip-pills').querySelectorAll('button')) b.disabled = !anyLive;
-  $('#clip-pills').classList.toggle('ready', !!target);
-  $('#clip-pills').title = !anyLive
-    ? 'Ninguém ao vivo pra clipar'
-    : target ? 'Clipar os últimos segundos' : 'Coloque uma live em destaque (⤢) para escolher qual clipar';
-}
 async function hotkeyClip(seconds) {
   if (!state.room || hotkeyBusy) return;
   const streamer = clipTarget();
