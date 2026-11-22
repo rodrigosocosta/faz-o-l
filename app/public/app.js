@@ -18,7 +18,7 @@ const QUALITY = {
 };
 
 // Versão do site (aparece no painel; ajuda a saber se o app pegou o código novo)
-const SITE_VERSION = '2026-11-22.11';
+const SITE_VERSION = '2026-11-22.12';
 
 const $ = (sel) => document.querySelector(sel);
 const state = {
@@ -1966,14 +1966,11 @@ async function applyClipHotkeys() {
   renderClipSettings();
 }
 
-/** Converte uma tecla apertada no formato do app ("Ctrl+Shift+KeyK"). Precisa de Ctrl, Alt ou Shift, ou ser F1–F24. */
+/** Converte uma tecla apertada no formato do app ("Ctrl+Shift+KeyK" ou só "KeyK"). Qualquer tecla vale. */
 function shortcutFromEvent(e) {
-  if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return null;
+  if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key) || !e.code) return null;
   const mods = [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Super'].filter(Boolean);
-  const code = e.code;
-  const isF = /^F([1-9]|1\d|2[0-4])$/.test(code);
-  if (!code || (!mods.length && !isF)) return null;
-  return [...mods, code].join('+');
+  return [...mods, e.code].join('+');
 }
 
 let capturing = null; // índice do botão esperando a tecla
@@ -1986,7 +1983,7 @@ function renderClipSettings() {
   $('#clip-settings-hint').textContent = !desktop
     ? 'Durações do menu ✂ Clipar. No app desktop dá pra pôr um atalho em cada uma (funciona dentro do jogo).'
     : hotkeysSupported
-      ? 'Durações do ✂ Clipar e atalhos que funcionam até dentro do jogo. Clique na tecla para trocar.'
+      ? 'Durações do ✂ Clipar e atalhos que funcionam até dentro do jogo. Clique no atalho e aperte qualquer tecla ou combinação. Tecla sozinha (sem Ctrl/Alt) para de digitar nos outros programas enquanto o app estiver aberto.'
       : 'Atualize o app para trocar os atalhos (por enquanto: Ctrl+F9, Ctrl+F10 e Ctrl+F11).';
   list.replaceChildren(...slots.map((slot, i) => {
     const li = document.createElement('li');
