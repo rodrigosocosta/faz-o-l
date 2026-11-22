@@ -497,7 +497,7 @@ body.mini-mode .tile-top { top: 8px; left: 8px; right: 8px; }
 body.mini-mode .tile-controls { left: 8px; right: auto; bottom: 8px; }
 
 /* botões de clipe configuráveis (painel Transmitir) */
-.clip-settings { margin-top: 14px; padding: 12px; border-radius: 16px; background: #ffffff08; border: 1px solid var(--line-soft); display: grid; gap: 8px; }
+.clip-settings { padding: 12px; border-radius: 16px; background: #ffffff08; border: 1px solid var(--line-soft); display: grid; gap: 8px; }
 .clip-settings-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .clip-settings-head strong { font-size: 14px; }
 .clip-settings .hint { margin: 0; }

@@ -130,6 +130,7 @@
         <button class="rail-btn" data-panel="stream" title="Transmitir"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.5"/><path d="M7.8 16.2a6 6 0 0 1 0-8.4M16.2 7.8a6 6 0 0 1 0 8.4"/></svg></button>
         <button class="rail-btn" id="rail-clips" title="Clipes"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.1 15.9M14.5 14.5L20 20M8.1 8.1L12 12"/></svg><span id="clips-count" class="rail-badge"></span></button>
         <button class="rail-btn" data-panel="people" title="Na sala"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.2a6.5 6.5 0 0 1 3.5 5.8"/></svg><span id="people-count" class="rail-badge"></span></button>
+        <button class="rail-btn" id="btn-settings" title="Configurações"><svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></button>
         <button id="btn-manage" class="rail-btn" title="Canal: convites e membros" hidden><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
       </nav>
 
@@ -189,16 +190,6 @@
           <p class="hint" id="browser-audio-hint">No Windows, marque <b>“Compartilhar áudio do sistema”</b> ao escolher a tela. Em aba do Chrome, marque <b>“Compartilhar áudio da guia”</b>.</p>
           <button id="btn-stream" class="btn btn-live btn-block">Transmitir minha tela</button>
           <p id="slots" class="hint center-text"></p>
-          <div class="clip-settings" id="clip-settings">
-            <div class="clip-settings-head">
-              <strong>Botões de clipe</strong>
-              <button type="button" class="btn btn-ghost btn-sm" id="clip-settings-reset">Padrão</button>
-            </div>
-            <p class="hint" id="clip-settings-hint">Durações do menu ✂ Clipar.</p>
-            <ul id="clip-slots" class="clip-slots"></ul>
-          </div>
-          <p id="build" class="hint center-text"></p>
-          <button type="button" id="btn-update" class="btn btn-ghost btn-sm btn-block" hidden>⟳ Procurar atualização do app</button>
         </div>
 
         <div class="panel" data-panel="people">
@@ -252,6 +243,25 @@
   </dialog>
 
   <!-- Gerenciar canal (dono) -->
+  <dialog id="dlg-settings" class="dialog">
+    <div class="stack">
+      <div class="row-between"><h2>Configurações</h2><button id="settings-close" class="btn btn-ghost btn-sm">✕</button></div>
+
+      <div class="clip-settings" id="clip-settings">
+            <div class="clip-settings-head">
+              <strong>Botões de clipe</strong>
+              <button type="button" class="btn btn-ghost btn-sm" id="clip-settings-reset">Padrão</button>
+            </div>
+            <p class="hint" id="clip-settings-hint">Durações do menu ✂ Clipar.</p>
+            <ul id="clip-slots" class="clip-slots"></ul>
+      </div>
+
+      <h3 class="section-title">App</h3>
+      <p id="build" class="hint"></p>
+      <button type="button" id="btn-update" class="btn btn-ghost btn-sm" hidden>⟳ Procurar atualização do app</button>
+    </div>
+  </dialog>
+
   <dialog id="dlg-manage" class="dialog">
     <div class="stack">
       <div class="row-between"><h2>Canal <span id="manage-name"></span></h2><button id="manage-close" class="btn btn-ghost btn-sm">✕</button></div>

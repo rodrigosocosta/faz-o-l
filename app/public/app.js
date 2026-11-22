@@ -18,7 +18,7 @@ const QUALITY = {
 };
 
 // Versão do site (aparece no painel; ajuda a saber se o app pegou o código novo)
-const SITE_VERSION = '2026-11-22.10';
+const SITE_VERSION = '2026-11-22.11';
 
 const $ = (sel) => document.querySelector(sel);
 const state = {
@@ -2057,6 +2057,19 @@ document.addEventListener('keydown', (e) => {
   capturing = null;
   saveClipSlots(slots);
 }, true);
+
+// Configurações (ícone na barra da esquerda): botões de clipe e atualização do app
+$('#btn-settings').addEventListener('click', () => {
+  renderClipSettings();
+  $('#dlg-settings').showModal();
+});
+$('#settings-close').addEventListener('click', () => $('#dlg-settings').close());
+$('#dlg-settings').addEventListener('close', () => {
+  if (capturing !== null) {
+    capturing = null;
+    applyClipHotkeys();
+  }
+});
 
 $('#clip-settings-reset').addEventListener('click', () => {
   capturing = null;
