@@ -344,8 +344,9 @@ export function livekitRouter() {
         canSubscribe: false, // só envia: não gasta banda recebendo as outras lives
         canPublish: true,
         canPublishData: false,
-        // UNKNOWN = trilha "voices" (vozes do Discord, separadas do som da live; só vão pro clipe)
-        canPublishSources: [TrackSource.SCREEN_SHARE, TrackSource.SCREEN_SHARE_AUDIO, TrackSource.UNKNOWN],
+        // Sem lista de tipos: além da tela e do som da tela, o app publica a trilha "voices"
+        // (vozes do Discord, só pros clipes), que é do tipo "desconhecido" — e esse tipo não
+        // dá pra pôr na lista (o SDK não converte e o token nem sai).
         canUpdateOwnMetadata: false,
       });
       emitUpdate(room);
