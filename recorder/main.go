@@ -414,6 +414,28 @@ func makeClip(req clipRequest) (map[string]any, error) {
 	}
 	chosen := segs[first:]
 
+	// Vozes do Discord: se os pedaços mais novos têm as duas trilhas de áudio, tira os
+	// mais velhos com uma só (de antes de a live recomeçar). O concat segue as trilhas do
+	// primeiro pedaço: sem isso o clipe inteiro sairia sem as vozes.
+	withVoices := false
+	for i := len(chosen) - 1; i >= 0 && i >= len(chosen)-3; i-- {
+		if audioStreams(chosen[i].path) >= 2 {
+			withVoices = true
+			break
+		}
+	}
+	if withVoices {
+		var kept []segment
+		for _, s := range chosen {
+			if audioStreams(s.path) != 1 { // 0 = pedaço ainda sendo escrito: fica
+				kept = append(kept, s)
+			}
+		}
+		if len(kept) > 0 {
+			chosen = kept
+		}
+	}
+
 	list := filepath.Join(os.TempDir(), req.ID+".txt")
 	var b strings.Builder
 	for _, s := range chosen {
@@ -434,7 +456,7 @@ func makeClip(req clipRequest) (map[string]any, error) {
 	out := filepath.Join(clipsDir, file)
 	args := []string{"-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-f", "concat", "-safe", "0", "-i", list}
 	// Duas trilhas de áudio (som da live + vozes do Discord): junta numa só pro clipe
-	if audioStreams(chosen[0].path) >= 2 { // o concat segue as trilhas do primeiro pedaço
+	if withVoices {
 		codec := "libopus"
 		if ext == "mp4" {
 			codec = "aac"
