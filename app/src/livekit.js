@@ -344,7 +344,8 @@ export function livekitRouter() {
         canSubscribe: false, // só envia: não gasta banda recebendo as outras lives
         canPublish: true,
         canPublishData: false,
-        canPublishSources: [TrackSource.SCREEN_SHARE, TrackSource.SCREEN_SHARE_AUDIO],
+        // UNKNOWN = trilha "voices" (vozes do Discord, separadas do som da live; só vão pro clipe)
+        canPublishSources: [TrackSource.SCREEN_SHARE, TrackSource.SCREEN_SHARE_AUDIO, TrackSource.UNKNOWN],
         canUpdateOwnMetadata: false,
       });
       emitUpdate(room);
