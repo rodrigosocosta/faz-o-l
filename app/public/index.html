@@ -181,7 +181,7 @@
           <label class="check"><input type="checkbox" id="opt-audio" checked /> Transmitir som</label>
           <p class="hint" id="browser-audio-hint">No Windows, marque <b>“Compartilhar áudio do sistema”</b> ao escolher a tela. Em aba do Chrome, marque <b>“Compartilhar áudio da guia”</b>.</p>
           <button id="btn-stream" class="btn btn-live btn-block">Transmitir minha tela</button>
-          <button id="btn-event" class="btn btn-block">🎬 Começar evento (YouTube ou Twitch)</button>
+          <button id="btn-event" class="btn btn-block">🎬 Começar evento</button>
           <p id="slots" class="hint center-text"></p>
         </div>
 
@@ -192,13 +192,13 @@
     </div>
   </section>
 
-  <!-- Evento: vídeo ou live do YouTube/Twitch assistido junto -->
+  <!-- Evento: vídeo ou live do YouTube/Twitch/Kick assistido junto -->
   <dialog id="dlg-event" class="dialog">
     <form id="form-event" class="stack">
       <h2>🎬 Evento</h2>
-      <p class="hint">Todo mundo na sala assiste o mesmo vídeo ou live do YouTube ou da Twitch, no mesmo ponto. Ninguém precisa transmitir a tela. Você controla tocar, pausar, pular e encerrar.</p>
-      <label class="field">Link do YouTube ou da Twitch
-        <input id="event-url" required placeholder="youtube.com/watch?v=… ou twitch.tv/canal" autocomplete="off" />
+      <p class="hint">Todo mundo na sala assiste o mesmo vídeo ou live do YouTube, da Twitch ou da Kick, no mesmo ponto. Ninguém precisa transmitir a tela. Você controla tocar, pausar, pular e encerrar.</p>
+      <label class="field">Link do YouTube, Twitch ou Kick
+        <input id="event-url" required placeholder="youtube.com/watch?v=…, twitch.tv/canal ou kick.com/canal" autocomplete="off" />
       </label>
       <label class="field">Nome do evento (opcional)
         <input id="event-title" maxlength="100" placeholder="Usa o título do vídeo se ficar vazio" autocomplete="off" />

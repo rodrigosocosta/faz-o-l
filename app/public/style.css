@@ -543,3 +543,9 @@ body.mini-mode .tile-controls { left: 8px; right: auto; bottom: 8px; }
 }
 .ev-sync.ok { color: var(--accent); }
 .tile-event:hover .ev-sync, .tile-event.touch .ev-sync { top: 48px; }
+/* evento da Kick: o player da Kick não aceita comandos de fora, então os controles dele ficam
+   livres (som, tela cheia) e os nossos (encerrar, destacar) vão pro canto de cima */
+.tile-event.kick .event-shield { display: none; }
+.tile-event.kick .tile-controls { left: auto; bottom: auto; top: 12px; }
+.tile-event.kick .tile-controls .ctl-group, .tile-event.kick .ev-time, .tile-event.kick .spacer, .tile-event.kick .ctl-full { display: none; }
+.tile-event.kick .tile-name { max-width: 45%; }

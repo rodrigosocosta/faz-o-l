@@ -1,4 +1,4 @@
-// Eventos: assistir um vídeo ou live do YouTube (ou da Twitch) juntos, todo mundo no mesmo ponto.
+// Eventos: assistir um vídeo ou live do YouTube (ou live da Twitch/Kick) juntos, todo mundo no mesmo ponto.
 //
 // Ninguém transmite a tela: cada pessoa toca o vídeo direto do YouTube, e o servidor
 // guarda só "qual vídeo, em que segundo, tocando ou pausado, desde quando". Toda
@@ -79,6 +79,24 @@ export function twitchMedia(input) {
   return null;
 }
 
+const KICK_RESERVED = new Set(['browse', 'categories', 'category', 'following', 'search', 'video', 'videos', 'clips', 'dashboard', 'settings', 'terms-of-service', 'privacy-policy', 'community-guidelines']);
+
+/** Link da Kick: canal (live). */
+export function kickChannel(input) {
+  const text = String(input || '').trim();
+  let url;
+  try {
+    url = new URL(text.includes('://') ? text : `https://${text}`);
+  } catch {
+    return null;
+  }
+  const host = url.hostname.replace(/^www\./, '');
+  if (host !== 'kick.com' && host !== 'player.kick.com') return null;
+  const slug = url.pathname.split('/').filter(Boolean)[0] || '';
+  if (!/^[\w-]{3,25}$/.test(slug) || KICK_RESERVED.has(slug.toLowerCase())) return null;
+  return slug.toLowerCase();
+}
+
 /** Segundo em que o vídeo deve estar agora. */
 const currentPosition = (ev, now = Date.now()) => ev.position + (ev.playing ? (now - ev.updatedAt) / 1000 : 0);
 
@@ -124,18 +142,23 @@ export function eventsRouter() {
     }
     const videoId = youtubeId(req.body?.url);
     const twitch = videoId ? null : twitchMedia(req.body?.url);
-    if (!videoId && !twitch) return res.status(400).json({ error: 'Cole um link do YouTube (vídeo ou live) ou da Twitch (canal ou vídeo).' });
+    const kick = videoId || twitch ? null : kickChannel(req.body?.url);
+    if (!videoId && !twitch && !kick) {
+      return res.status(400).json({ error: 'Cole um link do YouTube (vídeo ou live), da Twitch (canal ou vídeo) ou da Kick (canal).' });
+    }
     const info = videoId ? await videoTitle(videoId) : null;
-    const fallback = twitch
-      ? (twitch.kind === 'channel' ? `Live de ${twitch.id} na Twitch` : 'Vídeo da Twitch')
-      : 'Evento';
+    let fallback = 'Evento';
+    if (twitch) fallback = twitch.kind === 'channel' ? `Live de ${twitch.id} na Twitch` : 'Vídeo da Twitch';
+    if (kick) fallback = `Live de ${kick} na Kick`;
     const title = String(req.body?.title || '').trim().slice(0, 100) || info?.title || fallback;
+    let media = { source: 'youtube', videoId };
+    if (twitch) media = { source: 'twitch', twitch };
+    if (kick) media = { source: 'kick', kick: { id: kick } };
     const ev = {
       id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
-      source: twitch ? 'twitch' : 'youtube',
-      ...(twitch ? { twitch } : { videoId }),
+      ...media,
       title,
-      author: info?.author || (twitch?.kind === 'channel' ? twitch.id : ''),
+      author: info?.author || (twitch?.kind === 'channel' ? twitch.id : kick || ''),
       by: { id: req.user.id, name: req.user.name },
       playing: true,
       position: Math.max(0, Number(req.body?.start) || 0),

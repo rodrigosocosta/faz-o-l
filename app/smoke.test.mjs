@@ -141,6 +141,16 @@ assert.equal(tw.source, 'twitch');
 assert.equal(tw.twitch.id, 'gaules');
 assert.equal(tw.title, 'Live de gaules na Twitch');
 assert.equal((await call(friend, 'DELETE', evUrl)).status, 200);
+// Kick: canal (live)
+const { kickChannel } = await import('./src/events.js');
+assert.equal(kickChannel('https://kick.com/Rhaychuu'), 'rhaychuu');
+assert.equal(kickChannel('https://kick.com/browse'), null);
+assert.equal(kickChannel('https://exemplo.com/rhaychuu'), null);
+const kk = (await call(friend, 'POST', evUrl, { url: 'https://kick.com/rhaychuu' })).json.event;
+assert.equal(kk.source, 'kick');
+assert.equal(kk.kick.id, 'rhaychuu');
+assert.equal(kk.title, 'Live de rhaychuu na Kick');
+assert.equal((await call(friend, 'DELETE', evUrl)).status, 200);
 
 // Dono remove membro
 assert.equal((await call(owner, 'DELETE', `/api/c/${channel.id}/members/${friend.id}`)).status, 200);

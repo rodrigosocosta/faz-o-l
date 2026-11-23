@@ -18,7 +18,7 @@ const QUALITY = {
 };
 
 // Versão do site (aparece no painel; ajuda a saber se o app pegou o código novo)
-const SITE_VERSION = '2026-11-22.17';
+const SITE_VERSION = '2026-11-22.18';
 
 const $ = (sel) => document.querySelector(sel);
 const state = {
@@ -2292,7 +2292,39 @@ function createTwitchPlayer(holder, media, startSeconds) {
   return { adapter, ready };
 }
 
-const mediaKey = (d) => (d.source === 'twitch' ? `twitch:${d.twitch.kind}:${d.twitch.id}` : `yt:${d.videoId}`);
+/**
+ * Live da Kick: o player embutido da Kick não aceita comandos de fora (nem tocar, nem volume,
+ * nem saber em que ponto está). Todo mundo abre a live na ponta e usa os controles do próprio
+ * player da Kick (o som fica nele).
+ */
+function createKickPlayer(holder, channel) {
+  const frame = document.createElement('iframe');
+  frame.src = `https://player.kick.com/${encodeURIComponent(channel)}?autoplay=true&muted=true`;
+  frame.allow = 'autoplay; fullscreen; picture-in-picture';
+  frame.allowFullscreen = true;
+  holder.replaceChildren(frame);
+  const ready = new Promise((resolve) => {
+    frame.addEventListener('load', resolve, { once: true });
+    setTimeout(resolve, 8000);
+  });
+  const noop = () => {};
+  const adapter = {
+    kick: true,
+    getPlayerState: () => PS.PLAYING,
+    getCurrentTime: () => 0,
+    getDuration: () => 0,
+    getVideoData: () => ({ isLive: true }),
+    seekTo: noop, playVideo: noop, pauseVideo: noop, setVolume: noop, mute: noop, unMute: noop,
+    destroy: () => holder.replaceChildren(),
+  };
+  return { adapter, ready };
+}
+
+const mediaKey = (d) => {
+  if (d.source === 'twitch') return `twitch:${d.twitch.kind}:${d.twitch.id}`;
+  if (d.source === 'kick') return `kick:${d.kick.id}`;
+  return `yt:${d.videoId}`;
+};
 
 const serverNow = () => Date.now() + ev.offset;
 const eventTarget = (d) => d.position + (d.playing ? (serverNow() - d.updatedAt) / 1000 : 0);
@@ -2417,11 +2449,14 @@ function renderEventTile(tile) {
   const d = ev.data;
   const control = canControlEvent();
   tile.el.querySelector('.tile-name').textContent = `${d.title} • ${d.by.name}`;
-  tile.el.querySelector('.ev-play').hidden = !control;
+  const kick = d.source === 'kick';
+  tile.el.querySelector('.ev-play').hidden = !control || kick;
   tile.el.querySelector('.ev-play').textContent = d.playing ? '⏸' : '▶';
-  tile.el.querySelector('.ev-seek').hidden = !control || isEventLive();
+  tile.el.querySelector('.ev-seek').hidden = !control || kick || isEventLive();
   tile.el.querySelector('.ev-stop').hidden = !control;
-  tile.el.classList.toggle('paused', !d.playing);
+  // Kick: sem comandos de fora; o som e a tela cheia ficam nos controles do player da Kick
+  tile.el.classList.toggle('kick', kick);
+  tile.el.classList.toggle('paused', !d.playing && !kick);
 }
 
 function isEventLive() {
@@ -2447,6 +2482,7 @@ async function ensureEventPlayer() {
   ev.creating = true;
   try {
     if (d.source === 'twitch') await createTwitch(d, key);
+    else if (d.source === 'kick') await createKick(d, key);
     else await createYouTube(d, key);
   } finally {
     ev.creating = false;
@@ -2478,6 +2514,15 @@ async function createTwitch(d, key) {
   if (ev.player !== adapter) return;
   ev.ready = true;
   applyEventVolume();
+}
+
+async function createKick(d, key) {
+  const holder = freshEventHolder();
+  if (!holder) return;
+  const { adapter, ready } = createKickPlayer(holder, d.kick.id);
+  ev.player = adapter;
+  await ready;
+  if (ev.player === adapter && ev.videoId === key) ev.ready = true;
 }
 
 async function createYouTube(d, key) {
@@ -2536,6 +2581,7 @@ function syncEventPlayer(force) {
   const S = PS;
   const st = p.getPlayerState();
   const live = isEventLive();
+  if (p.kick) return;
   // Live da Twitch: não dá pra pular; todo mundo fica na ponta da live, só tocando/pausando
   if (p.twitch && live) {
     if (d.playing && st !== S.PLAYING) p.playVideo();
@@ -2671,6 +2717,7 @@ function eventDrift() {
   if (!p || !ev.ready || !d) return { drift: null, state: 'loading' };
   const S = PS;
   const st = p.getPlayerState();
+  if (p.kick) return { drift: 0, state: 'kick' };
   if (p.twitch && isEventLive()) {
     if ((st === S.PLAYING) !== d.playing) return { drift: null, state: 'mismatch' };
     return { drift: 0, state: d.playing ? 'live' : 'paused' };
@@ -2719,6 +2766,7 @@ function renderEventSync() {
     if (r.state === 'buffering') return { name, ok: false, text: 'carregando (internet lenta)' };
     if (r.state === 'mismatch') return { name, ok: false, text: 'tocando/pausado diferente, ajustando…' };
     if (r.state === 'live') return { name, ok: true, text: 'na ponta da live' };
+    if (r.state === 'kick') return { name, ok: true, text: 'com a live da Kick aberta' };
     const off = Math.abs(r.drift);
     if (off <= tolerance) return { name, ok: true, text: `${off < 0.1 ? 'no ponto' : `${off.toFixed(1)} s`}` };
     return { name, ok: false, text: `${off.toFixed(1)} s ${r.drift > 0 ? 'adiantado' : 'atrasado'}, ajustando…` };
