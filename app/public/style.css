@@ -518,6 +518,7 @@ body.mini-mode .tile-controls { left: 8px; right: auto; bottom: 8px; }
 /* evento: YouTube assistido junto */
 .tile-event .event-player { position: absolute; inset: 0; background: #000; }
 .tile-event .event-player iframe { width: 100%; height: 100%; border: 0; display: block; }
+.tile-event .event-player > div { width: 100%; height: 100%; }
 /* Ninguém mexe direto no player do YouTube: tudo passa pelos controles do evento */
 .tile-event .event-shield { position: absolute; inset: 0; z-index: 1; }
 .tile-event .tile-top, .tile-event .tile-controls { z-index: 2; }

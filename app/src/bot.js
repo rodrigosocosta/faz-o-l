@@ -231,7 +231,7 @@ export async function startBot() {
     msg.edit({ embeds: [embed], components: [] }).catch(() => {});
   });
 
-  // Evento (YouTube assistido junto): avisa no canal de avisos e marca como encerrado depois
+  // Evento (YouTube/Twitch assistido junto): avisa no canal de avisos e marca como encerrado depois
   const eventMessages = new Map(); // id do canal -> mensagem
   liveEvents.on('event:start', async ({ channel, event }) => {
     const target = await textChannel(channel.notify_channel_id);
@@ -241,8 +241,8 @@ export async function startBot() {
       .setTitle(`🎬 Evento: ${event.title}`.slice(0, 256))
       .setURL(channelUrl(channel))
       .setDescription(`${event.by.name} começou um evento. Todo mundo assiste junto, no mesmo ponto do vídeo.`)
-      .setThumbnail(`https://i.ytimg.com/vi/${event.videoId}/hqdefault.jpg`)
       .setTimestamp();
+    if (event.videoId) embed.setThumbnail(`https://i.ytimg.com/vi/${event.videoId}/hqdefault.jpg`);
     try {
       eventMessages.set(channel.id, await target.send({ embeds: [embed], components: [watchButton(channel)] }));
     } catch (err) {

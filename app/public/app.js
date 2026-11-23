@@ -18,7 +18,7 @@ const QUALITY = {
 };
 
 // Versão do site (aparece no painel; ajuda a saber se o app pegou o código novo)
-const SITE_VERSION = '2026-11-22.16';
+const SITE_VERSION = '2026-11-22.17';
 
 const $ = (sel) => document.querySelector(sel);
 const state = {
@@ -2228,6 +2228,72 @@ function loadYouTubeApi() {
   return ytApiPromise;
 }
 
+// Estados do player (os números do YouTube); o player da Twitch abaixo usa os mesmos
+const PS = { UNSTARTED: -1, ENDED: 0, PLAYING: 1, PAUSED: 2, BUFFERING: 3, CUED: 5 };
+let twitchApiPromise = null;
+
+function loadTwitchApi() {
+  if (window.Twitch?.Player) return Promise.resolve(window.Twitch);
+  if (!twitchApiPromise) {
+    twitchApiPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://player.twitch.tv/js/embed/v1.js';
+      script.onload = () => resolve(window.Twitch);
+      script.onerror = () => {
+        twitchApiPromise = null;
+        reject(new Error('Não consegui carregar o player da Twitch.'));
+      };
+      document.head.append(script);
+    });
+  }
+  return twitchApiPromise;
+}
+
+const twitchTime = (s) => {
+  const t = Math.floor(s);
+  return `${Math.floor(t / 3600)}h${Math.floor((t % 3600) / 60)}m${t % 60}s`;
+};
+
+/**
+ * Player da Twitch com a mesma cara do player do YouTube (getCurrentTime, seekTo, playVideo…),
+ * pra sincronia funcionar igual. Live da Twitch não tem como pular: todo mundo fica na ponta.
+ */
+function createTwitchPlayer(holder, media, startSeconds) {
+  holder.id = `ev-twitch-${Date.now()}`;
+  const opts = { width: '100%', height: '100%', parent: [location.hostname], autoplay: true, muted: true, controls: false };
+  if (media.kind === 'channel') opts.channel = media.id;
+  else {
+    opts.video = media.id;
+    if (startSeconds > 1) opts.time = twitchTime(startSeconds);
+  }
+  const T = window.Twitch.Player;
+  const tp = new T(holder.id, opts);
+  let st = PS.UNSTARTED;
+  const live = media.kind === 'channel';
+  const adapter = {
+    twitch: true,
+    getPlayerState: () => st,
+    getCurrentTime: () => tp.getCurrentTime() || 0,
+    getDuration: () => (live ? 0 : tp.getDuration() || 0),
+    getVideoData: () => ({ isLive: live }),
+    seekTo: (t) => { if (!live) tp.seek(t); },
+    playVideo: () => tp.play(),
+    pauseVideo: () => tp.pause(),
+    setVolume: (v) => tp.setVolume(v / 100),
+    mute: () => tp.setMuted(true),
+    unMute: () => tp.setMuted(false),
+    destroy: () => holder.replaceChildren(),
+  };
+  const ready = new Promise((resolve) => tp.addEventListener(T.READY, resolve));
+  tp.addEventListener(T.PLAYING, () => { st = PS.PLAYING; renderEventTime(); });
+  tp.addEventListener(T.PAUSE, () => { st = PS.PAUSED; renderEventTime(); });
+  tp.addEventListener(T.ENDED, () => { st = PS.ENDED; });
+  tp.addEventListener(T.OFFLINE, () => toast('Evento: esse canal da Twitch está offline agora.', true));
+  return { adapter, ready };
+}
+
+const mediaKey = (d) => (d.source === 'twitch' ? `twitch:${d.twitch.kind}:${d.twitch.id}` : `yt:${d.videoId}`);
+
 const serverNow = () => Date.now() + ev.offset;
 const eventTarget = (d) => d.position + (d.playing ? (serverNow() - d.updatedAt) / 1000 : 0);
 const canControlEvent = () => !!ev.data && (ev.data.by.id === state.me?.id || state.channel?.role === 'owner');
@@ -2365,30 +2431,74 @@ function isEventLive() {
 }
 
 async function ensureEventPlayer() {
-  const YT = await loadYouTubeApi();
-  const tile = state.tiles.get(EVENT_TILE);
-  if (!tile || !ev.data) return;
-  if (ev.player && ev.videoId === ev.data.videoId) return;
-  ev.videoId = ev.data.videoId;
-  if (ev.player && ev.ready) {
-    ev.player.loadVideoById({ videoId: ev.videoId, startSeconds: eventTarget(ev.data) });
+  const d = ev.data;
+  if (!d || !state.tiles.has(EVENT_TILE)) return;
+  const key = mediaKey(d);
+  if (ev.videoId === key && (ev.player || ev.creating)) return;
+  // YouTube → outro vídeo do YouTube: troca sem recriar o player
+  if (ev.player && ev.ready && !ev.player.twitch && d.source !== 'twitch') {
+    ev.videoId = key;
+    ev.player.loadVideoById({ videoId: d.videoId, startSeconds: eventTarget(d) });
     return;
   }
+  if (ev.player) destroyEventPlayer();
+  ev.videoId = key;
   ev.ready = false;
-  const holder = tile.el.querySelector('.event-player > div');
+  ev.creating = true;
+  try {
+    if (d.source === 'twitch') await createTwitch(d, key);
+    else await createYouTube(d, key);
+  } finally {
+    ev.creating = false;
+  }
+  if (ev.videoId !== key) return;
+  clearInterval(ev.timer);
+  ev.timer = setInterval(() => {
+    syncEventPlayer(false);
+    renderEventTime();
+    if (++ev.ticks % 2 === 0) reportEventSync();
+  }, 1000);
+}
+
+/** Caixa vazia pro player novo (o anterior pode ter deixado o iframe dele). */
+function freshEventHolder() {
+  const box = state.tiles.get(EVENT_TILE)?.el.querySelector('.event-player');
+  if (!box) return null;
+  box.innerHTML = '<div></div>';
+  return box.firstElementChild;
+}
+
+async function createTwitch(d, key) {
+  await loadTwitchApi();
+  const holder = ev.videoId === key && freshEventHolder();
+  if (!holder) return;
+  const { adapter, ready } = createTwitchPlayer(holder, d.twitch, eventTarget(d));
+  ev.player = adapter;
+  await ready;
+  if (ev.player !== adapter) return;
+  ev.ready = true;
+  applyEventVolume();
+}
+
+async function createYouTube(d, key) {
+  const YT = await loadYouTubeApi();
+  const holder = ev.videoId === key && freshEventHolder();
+  if (!holder) return;
   await new Promise((resolve) => {
     ev.player = new YT.Player(holder, {
       width: '100%',
       height: '100%',
-      videoId: ev.videoId,
+      videoId: d.videoId,
       playerVars: {
         autoplay: 1, mute: 1, controls: 0, disablekb: 1, rel: 0, playsinline: 1, iv_load_policy: 3,
-        start: Math.floor(eventTarget(ev.data)),
+        start: Math.floor(eventTarget(d)),
       },
       events: {
         onReady: () => {
-          ev.ready = true;
-          applyEventVolume();
+          if (ev.videoId === key) {
+            ev.ready = true;
+            applyEventVolume();
+          }
           resolve();
         },
         onStateChange: () => renderEventTime(),
@@ -2406,12 +2516,6 @@ async function ensureEventPlayer() {
       },
     });
   });
-  clearInterval(ev.timer);
-  ev.timer = setInterval(() => {
-    syncEventPlayer(false);
-    renderEventTime();
-    if (++ev.ticks % 2 === 0) reportEventSync();
-  }, 1000);
 }
 
 function destroyEventPlayer() {
@@ -2428,10 +2532,16 @@ let calibratingLive = false;
 function syncEventPlayer(force) {
   const p = ev.player;
   const d = ev.data;
-  if (!p || !ev.ready || !d || !window.YT) return;
-  const S = window.YT.PlayerState;
+  if (!p || !ev.ready || !d) return;
+  const S = PS;
   const st = p.getPlayerState();
   const live = isEventLive();
+  // Live da Twitch: não dá pra pular; todo mundo fica na ponta da live, só tocando/pausando
+  if (p.twitch && live) {
+    if (d.playing && st !== S.PLAYING) p.playVideo();
+    else if (!d.playing && st === S.PLAYING) p.pauseVideo();
+    return;
+  }
   // Live: quem controla manda o "tempo da live" do player dele (igual pra todo mundo).
   // Até isso chegar, cada um fica na ponta da live, sem pular.
   if (live && !d.live) {
@@ -2520,7 +2630,7 @@ async function stopEvent() {
   }
 }
 
-// Começar evento (painel Transmitir → "Começar evento do YouTube")
+// Começar evento (painel Transmitir → "Começar evento")
 $('#btn-event').addEventListener('click', () => {
   if (ev.data && !canControlEvent()) return toast(`Já tem um evento rolando (de ${ev.data.by.name}).`, true);
   $('#event-url').value = '';
@@ -2558,9 +2668,13 @@ ev.ticks = 0;
 function eventDrift() {
   const p = ev.player;
   const d = ev.data;
-  if (!p || !ev.ready || !d || !window.YT) return { drift: null, state: 'loading' };
-  const S = window.YT.PlayerState;
+  if (!p || !ev.ready || !d) return { drift: null, state: 'loading' };
+  const S = PS;
   const st = p.getPlayerState();
+  if (p.twitch && isEventLive()) {
+    if ((st === S.PLAYING) !== d.playing) return { drift: null, state: 'mismatch' };
+    return { drift: 0, state: d.playing ? 'live' : 'paused' };
+  }
   if (isEventLive() && !d.live) return { drift: null, state: 'calibrating' };
   if (st === S.ENDED) return { drift: 0, state: 'ended' };
   if (st === S.BUFFERING) return { drift: p.getCurrentTime() - eventTarget(d), state: 'buffering' };
@@ -2604,6 +2718,7 @@ function renderEventSync() {
     if (r.state === 'loading' || r.state === 'calibrating') return { name, ok: false, text: 'entrando no ponto certo…' };
     if (r.state === 'buffering') return { name, ok: false, text: 'carregando (internet lenta)' };
     if (r.state === 'mismatch') return { name, ok: false, text: 'tocando/pausado diferente, ajustando…' };
+    if (r.state === 'live') return { name, ok: true, text: 'na ponta da live' };
     const off = Math.abs(r.drift);
     if (off <= tolerance) return { name, ok: true, text: `${off < 0.1 ? 'no ponto' : `${off.toFixed(1)} s`}` };
     return { name, ok: false, text: `${off.toFixed(1)} s ${r.drift > 0 ? 'adiantado' : 'atrasado'}, ajustando…` };

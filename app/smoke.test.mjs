@@ -131,6 +131,16 @@ assert.equal((await call(owner, 'GET', evUrl)).json.event.position, 42);
 assert.equal((await call(owner, 'PATCH', evUrl, { action: 'play' })).json.event.playing, true);
 assert.equal((await call(owner, 'DELETE', evUrl)).status, 200);
 assert.equal((await call(friend, 'GET', evUrl)).json.event, null);
+// Twitch: canal (live) e vídeo gravado
+const { twitchMedia } = await import('./src/events.js');
+assert.deepEqual(twitchMedia('https://www.twitch.tv/Gaules'), { kind: 'channel', id: 'gaules' });
+assert.deepEqual(twitchMedia('twitch.tv/videos/2245678901'), { kind: 'video', id: '2245678901' });
+assert.equal(twitchMedia('https://www.twitch.tv/directory'), null);
+const tw = (await call(friend, 'POST', evUrl, { url: 'https://twitch.tv/gaules' })).json.event;
+assert.equal(tw.source, 'twitch');
+assert.equal(tw.twitch.id, 'gaules');
+assert.equal(tw.title, 'Live de gaules na Twitch');
+assert.equal((await call(friend, 'DELETE', evUrl)).status, 200);
 
 // Dono remove membro
 assert.equal((await call(owner, 'DELETE', `/api/c/${channel.id}/members/${friend.id}`)).status, 200);
