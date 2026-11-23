@@ -144,21 +144,25 @@ impl Capture {
     }
 
     /// Soma até 10 ms desta captura em `mix`.
-    fn mix_into(&mut self, mix: &mut [f32]) {
+    fn mix_into(&mut self, mix: &mut [f32]) -> f32 {
         if !self.primed {
             if self.queue.len() < PRIME_BYTES {
-                return;
+                return 0.0;
             }
             self.primed = true;
         }
         let n = self.queue.len().min(BYTES_PER_FRAME) / 8 * 8; // quadros estéreo inteiros
         let bytes: Vec<u8> = self.queue.drain(..n).collect();
+        let mut peak = 0f32;
         for (acc, b) in mix.iter_mut().zip(bytes.chunks_exact(4)) {
-            *acc += f32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+            let s = f32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+            peak = peak.max(s.abs());
+            *acc += s;
         }
         if n < BYTES_PER_FRAME {
             self.primed = false; // acabou o som (ou atrasou): espera juntar de novo
         }
+        peak
     }
 }
 
@@ -168,38 +172,125 @@ impl Drop for Capture {
     }
 }
 
-fn run_mixer(source: &NativeAudioSource, stop: &AtomicBool, pick: Pick) -> Result<(), Box<dyn std::error::Error>> {
-    let own = std::process::id();
-    let mut captures: HashMap<u32, Capture> = HashMap::new();
-    let mut failed: HashMap<u32, Instant> = HashMap::new();
-    let mut last_refresh: Option<Instant> = None;
-    let start = Instant::now();
-    let mut emitted: u64 = 0;
+/// Captura aberta numa thread auxiliar, entregue pra thread da mistura.
+/// Os objetos do WASAPI aqui são do modelo multithread (MTA): podem trocar de thread.
+struct Opened(u32, Capture);
+unsafe impl Send for Opened {}
 
-    while !stop.load(Ordering::Relaxed) {
-        if last_refresh.map_or(true, |t| t.elapsed() >= REFRESH_EVERY) {
-            last_refresh = Some(Instant::now());
+enum Msg {
+    /// Programas que devem estar na trilha agora
+    Want(HashSet<u32>),
+    Opened(Opened),
+}
+
+/// Estado dividido entre a mistura e quem abre as capturas.
+#[derive(Default)]
+struct Shared {
+    /// Capturas funcionando (a mistura mantém)
+    active: HashSet<u32>,
+    /// Abrindo agora, desde quando
+    opening: HashMap<u32, Instant>,
+    /// Não abriu: só tenta de novo depois desse horário
+    retry_at: HashMap<u32, Instant>,
+}
+
+/// Abrir a captura de um programa às vezes trava pra sempre dentro do Windows (o pedido
+/// fica esperando uma resposta que não vem). Por isso cada uma abre na sua própria thread,
+/// com limite de tempo: se travar, aquele programa fica de fora e o resto do som segue.
+const OPEN_TIMEOUT: Duration = Duration::from_secs(5);
+const HUNG_RETRY: Duration = Duration::from_secs(600);
+
+fn spawn_manager(pick: Pick, stop: Arc<AtomicBool>, shared: Arc<std::sync::Mutex<Shared>>, tx: std::sync::mpsc::Sender<Msg>) {
+    let _ = std::thread::Builder::new().name(format!("fazol-audio-lista-{pick:?}")).spawn(move || {
+        let _ = wasapi::initialize_mta().ok();
+        let own = std::process::id();
+        while !stop.load(Ordering::Relaxed) {
             match wanted(pick, own) {
                 Ok(want) => {
-                    captures.retain(|pid, _| want.contains(pid));
-                    failed.retain(|_, at| at.elapsed() < RETRY_AFTER);
-                    for pid in want {
-                        if captures.contains_key(&pid) || failed.contains_key(&pid) {
-                            continue;
+                    let mut to_open = Vec::new();
+                    {
+                        let mut s = shared.lock().unwrap();
+                        let now = Instant::now();
+                        s.retry_at.retain(|_, at| *at > now);
+                        let hung: Vec<u32> = s.opening.iter().filter(|(_, t)| t.elapsed() > OPEN_TIMEOUT).map(|(p, _)| *p).collect();
+                        for pid in hung {
+                            s.opening.remove(&pid);
+                            s.retry_at.insert(pid, now + HUNG_RETRY);
+                            log::warn!("áudio ({pick:?}): processo {pid} travou ao abrir a captura; fica de fora");
                         }
-                        match Capture::open(pid) {
-                            Ok(c) => {
-                                log::info!("áudio ({pick:?}): capturando o processo {pid}");
-                                captures.insert(pid, c);
-                            }
-                            Err(e) => {
-                                log::warn!("áudio ({pick:?}): processo {pid} sem captura: {e}");
-                                failed.insert(pid, Instant::now());
+                        for &pid in &want {
+                            if !s.active.contains(&pid) && !s.opening.contains_key(&pid) && !s.retry_at.contains_key(&pid) {
+                                s.opening.insert(pid, now);
+                                to_open.push(pid);
                             }
                         }
                     }
+                    if tx.send(Msg::Want(want)).is_err() {
+                        return; // a mistura acabou
+                    }
+                    for pid in to_open {
+                        spawn_opener(pick, pid, shared.clone(), tx.clone());
+                    }
                 }
                 Err(e) => log::warn!("áudio ({pick:?}): não consegui listar os programas com som: {e}"),
+            }
+            let until = Instant::now() + REFRESH_EVERY;
+            while Instant::now() < until && !stop.load(Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
+    });
+}
+
+fn spawn_opener(pick: Pick, pid: u32, shared: Arc<std::sync::Mutex<Shared>>, tx: std::sync::mpsc::Sender<Msg>) {
+    let _ = std::thread::Builder::new().name(format!("fazol-audio-abre-{pid}")).spawn(move || {
+        let _ = wasapi::initialize_mta().ok();
+        let result = Capture::open(pid);
+        let mut s = shared.lock().unwrap();
+        if s.opening.remove(&pid).is_none() {
+            return; // demorou demais e já foi dado como travado
+        }
+        match result {
+            Ok(c) => {
+                drop(s);
+                log::info!("áudio ({pick:?}): capturando o processo {pid}");
+                let _ = tx.send(Msg::Opened(Opened(pid, c)));
+            }
+            Err(e) => {
+                s.retry_at.insert(pid, Instant::now() + RETRY_AFTER);
+                log::warn!("áudio ({pick:?}): processo {pid} sem captura: {e}");
+            }
+        }
+    });
+}
+
+fn run_mixer(source: &NativeAudioSource, stop: &Arc<AtomicBool>, pick: Pick) -> Result<(), Box<dyn std::error::Error>> {
+    let shared = Arc::new(std::sync::Mutex::new(Shared::default()));
+    let (tx, rx) = std::sync::mpsc::channel();
+    spawn_manager(pick, stop.clone(), shared.clone(), tx);
+    log::info!("áudio ({pick:?}): começou");
+
+    let mut captures: HashMap<u32, Capture> = HashMap::new();
+    let mut want: HashSet<u32> = HashSet::new();
+    let start = Instant::now();
+    let mut emitted: u64 = 0;
+    // Pra o log: pico de som de cada programa nos últimos 10 s
+    let mut peaks: HashMap<u32, f32> = HashMap::new();
+    let mut last_report = Instant::now();
+
+    while !stop.load(Ordering::Relaxed) {
+        let before: HashSet<u32> = captures.keys().copied().collect();
+        while let Ok(msg) = rx.try_recv() {
+            match msg {
+                Msg::Want(w) => {
+                    captures.retain(|pid, _| w.contains(pid));
+                    want = w;
+                }
+                Msg::Opened(Opened(pid, c)) => {
+                    if want.contains(&pid) {
+                        captures.insert(pid, c);
+                    }
+                }
             }
         }
 
@@ -216,6 +307,9 @@ fn run_mixer(source: &NativeAudioSource, stop: &AtomicBool, pick: Pick) -> Resul
                 false
             }
         });
+        if captures.len() != before.len() || captures.keys().any(|p| !before.contains(p)) {
+            shared.lock().unwrap().active = captures.keys().copied().collect();
+        }
 
         // Um quadro de 10 ms por 10 ms de relógio (mesmo em silêncio: a trilha nunca para)
         let due = (start.elapsed().as_millis() / 10) as u64;
@@ -224,11 +318,20 @@ fn run_mixer(source: &NativeAudioSource, stop: &AtomicBool, pick: Pick) -> Resul
         }
         while emitted < due {
             let mut mix = vec![0f32; SAMPLES_PER_FRAME];
-            for c in captures.values_mut() {
-                c.mix_into(&mut mix);
+            for (pid, c) in captures.iter_mut() {
+                let peak = c.mix_into(&mut mix);
+                let e = peaks.entry(*pid).or_default();
+                *e = e.max(peak);
             }
             send(source, mix.into_iter().map(to_i16).collect());
             emitted += 1;
+        }
+        if last_report.elapsed() >= Duration::from_secs(10) {
+            last_report = Instant::now();
+            let mut list: Vec<String> = captures.keys().map(|p| format!("{p}={:.3}", peaks.get(p).copied().unwrap_or(0.0))).collect();
+            list.sort();
+            log::info!("áudio ({pick:?}): {} programa(s), pico em 10 s: [{}]", captures.len(), list.join(" "));
+            peaks.clear();
         }
         std::thread::sleep(Duration::from_millis(5));
     }
@@ -366,13 +469,22 @@ mod tests {
                 .into_iter()
                 .filter_map(|p| Capture::open(p).ok().map(|c| (p, c)))
                 .collect();
-            std::thread::sleep(Duration::from_secs(2));
-            println!("{pick:?}:");
-            for (p, c) in caps.iter_mut() {
-                let _ = c.drain();
-                let bytes: Vec<u8> = c.queue.iter().copied().collect();
-                let peak = bytes.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]).abs()).fold(0f32, f32::max);
-                println!("  {p} ({}): {} bytes, pico {peak:.3}", name(p), c.queue.len());
+            let mut stats: HashMap<u32, (usize, f32)> = HashMap::new();
+            let until = Instant::now() + Duration::from_secs(3);
+            while Instant::now() < until {
+                for (p, c) in caps.iter_mut() {
+                    let _ = c.drain();
+                    let bytes: Vec<u8> = c.queue.drain(..).collect();
+                    let peak = bytes.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]).abs()).fold(0f32, f32::max);
+                    let e = stats.entry(*p).or_default();
+                    e.0 += bytes.len();
+                    e.1 = e.1.max(peak);
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            println!("{pick:?} (3 s = 1152000 bytes esperados):");
+            for (p, (n, peak)) in &stats {
+                println!("  {p} ({}): {n} bytes, pico {peak:.3}", name(p));
             }
         }
     }

@@ -17,7 +17,22 @@ fn arg<T: std::str::FromStr>(args: &[String], i: usize, default: T) -> T {
     args.get(i).and_then(|v| v.parse().ok()).unwrap_or(default)
 }
 
+struct StderrLog;
+impl log::Log for StderrLog {
+    fn enabled(&self, m: &log::Metadata) -> bool {
+        m.level() <= log::Level::Info && m.target().starts_with("faz_o_l_desktop")
+    }
+    fn log(&self, r: &log::Record) {
+        if self.enabled(r.metadata()) {
+            eprintln!("[{}] {}", r.level(), r.args());
+        }
+    }
+    fn flush(&self) {}
+}
+
 pub fn run(args: &[String]) -> i32 {
+    // Logs do app (áudio, captura) no terminal
+    let _ = log::set_logger(&StderrLog).map(|()| log::set_max_level(log::LevelFilter::Info));
     if args.len() < 4 {
         eprintln!("uso: --test-stream <url> <token> [segundos] [codec] [fps] [largura] [altura] [bitrate] [audio]");
         return 2;

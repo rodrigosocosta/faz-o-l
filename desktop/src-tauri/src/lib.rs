@@ -7,6 +7,7 @@
 
 mod headless;
 mod hotkeys;
+mod logfile;
 mod mini;
 mod server;
 mod stream;
@@ -25,6 +26,7 @@ mod capture;
 mod hwenc;
 
 pub fn run() {
+    logfile::init();
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(hotkeys::plugin())
