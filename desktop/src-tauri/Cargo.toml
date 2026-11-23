@@ -29,8 +29,11 @@ wasapi = "0.27"
 # Media Foundation: codificação H.264 na placa de vídeo (NVENC / AMF / QuickSync)
 windows = { version = "0.62", features = [
     "Win32_Foundation",
+    "Win32_Media_Audio",
     "Win32_Media_MediaFoundation",
     "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_Threading",
     "Win32_System_Variant",
 ] }

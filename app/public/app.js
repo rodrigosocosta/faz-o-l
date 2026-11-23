@@ -18,7 +18,7 @@ const QUALITY = {
 };
 
 // Versão do site (aparece no painel; ajuda a saber se o app pegou o código novo)
-const SITE_VERSION = '2026-11-22.18';
+const SITE_VERSION = '2026-11-22.19';
 
 const $ = (sel) => document.querySelector(sel);
 const state = {
@@ -462,6 +462,12 @@ document.addEventListener('click', () => {
 });
 
 function onTrackSubscribed(track, publication, participant) {
+  // Vozes do Discord de quem transmite pelo app: ninguém escuta ao vivo (todo mundo já
+  // está na call e ouviria duas vezes); o gravador junta essa trilha nos clipes.
+  if (publication.trackName === 'voices') {
+    publication.setSubscribed(false);
+    return;
+  }
   // A própria transmissão feita pelo app desktop, vista DENTRO do app: o áudio nunca
   // volta (eco); o vídeo aparece como prévia, se a opção estiver ligada.
   // No navegador ela aparece como uma live normal (o som começa mudo, ver abaixo).

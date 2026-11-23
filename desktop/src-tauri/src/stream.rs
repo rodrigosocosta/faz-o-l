@@ -37,6 +37,10 @@ pub struct StartArgs {
     /// "game" = só o som da janela escolhida; senão, o som do PC todo (menos o app)
     #[serde(default)]
     pub audio_mode: Option<String>,
+    /// Tira o Discord do som da live e manda as vozes numa trilha à parte, que só
+    /// entra nos clipes (padrão: sim)
+    #[serde(default)]
+    pub separate_voices: Option<bool>,
 }
 
 pub struct Session {
@@ -47,6 +51,7 @@ pub struct Session {
     capture: Option<crate::capture::Control>,
     encoder_thread: Option<JoinHandle<()>>,
     audio_thread: Option<JoinHandle<()>>,
+    voices_thread: Option<JoinHandle<()>>,
 }
 
 #[derive(Default)]
@@ -78,7 +83,7 @@ pub async fn teardown(session: Session) {
     if let Some(control) = session.capture {
         let _ = control.stop();
     }
-    for handle in [session.encoder_thread, session.audio_thread].into_iter().flatten() {
+    for handle in [session.encoder_thread, session.audio_thread, session.voices_thread].into_iter().flatten() {
         let _ = tauri::async_runtime::spawn_blocking(move || handle.join()).await;
     }
     let _ = session.room.close().await;
@@ -193,14 +198,11 @@ pub async fn open_session(args: &StartArgs) -> Result<(Session, UnboundedReceive
 
     // ---- áudio ----
     let mut audio_thread = None;
+    let mut voices_thread = None;
     #[cfg(windows)]
     if args.audio {
-        let audio_source = NativeAudioSource::new(
-            AudioSourceOptions { echo_cancellation: false, noise_suppression: false, auto_gain_control: false },
-            crate::audio::SAMPLE_RATE,
-            crate::audio::CHANNELS,
-            100,
-        );
+        let separate = args.separate_voices.unwrap_or(true);
+        let audio_source = new_audio_source();
         let audio_track = LocalAudioTrack::create_audio_track("screen-audio", RtcAudioSource::Native(audio_source.clone()));
         let published = room
             .local_participant()
@@ -217,10 +219,40 @@ pub async fn open_session(args: &StartArgs) -> Result<(Session, UnboundedReceive
             .await;
         match published {
             Ok(_) => {
-                let only = if args.audio_mode.as_deref() == Some("game") { target.process_id() } else { None };
-                audio_thread = Some(crate::audio::spawn(audio_source, stop.clone(), only));
+                use crate::audio::Pick;
+                let game = if args.audio_mode.as_deref() == Some("game") { target.process_id() } else { None };
+                let pick = match (game, separate) {
+                    (Some(pid), _) => Pick::Game(pid),
+                    (None, true) => Pick::AllButDiscord,
+                    (None, false) => Pick::All,
+                };
+                audio_thread = Some(crate::audio::spawn(audio_source, stop.clone(), pick));
             }
             Err(e) => log::warn!("sem áudio: {e}"),
+        }
+
+        // Vozes do Discord: trilha à parte com o nome "voices". O site não toca essa
+        // trilha pra ninguém; o gravador mistura ela com a da live nos clipes.
+        if separate && audio_thread.is_some() {
+            let voices_source = new_audio_source();
+            let voices_track = LocalAudioTrack::create_audio_track("voices", RtcAudioSource::Native(voices_source.clone()));
+            let published = room
+                .local_participant()
+                .publish_track(
+                    LocalTrack::Audio(voices_track),
+                    TrackPublishOptions {
+                        source: TrackSource::Unknown,
+                        dtx: false, // sempre manda pacotes: o gravador espera as trilhas andarem juntas
+                        red: false,
+                        stream: "screen".into(),
+                        ..Default::default()
+                    },
+                )
+                .await;
+            match published {
+                Ok(_) => voices_thread = Some(crate::audio::spawn(voices_source, stop.clone(), crate::audio::Pick::Discord)),
+                Err(e) => log::warn!("sem a trilha de vozes: {e}"),
+            }
         }
     }
 
@@ -238,8 +270,19 @@ pub async fn open_session(args: &StartArgs) -> Result<(Session, UnboundedReceive
         #[cfg(not(windows))]
         encoder_thread: None,
         audio_thread,
+        voices_thread,
     };
     Ok((session, events, label))
+}
+
+#[cfg(windows)]
+fn new_audio_source() -> NativeAudioSource {
+    NativeAudioSource::new(
+        AudioSourceOptions { echo_cancellation: false, noise_suppression: false, auto_gain_control: false },
+        crate::audio::SAMPLE_RATE,
+        crate::audio::CHANNELS,
+        100,
+    )
 }
 
 /// Nome do codificador de hardware (placa de vídeo), se houver.

@@ -36,6 +36,7 @@ pub fn run(args: &[String]) -> i32 {
         window: None,
         stretch: false,
         audio_mode: None,
+        separate_voices: None,
     };
 
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("tokio");

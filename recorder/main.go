@@ -1,6 +1,6 @@
 // Faz o L — gravador de clipes.
 //
-// Entra na sala escondido, recebe cada live (tela + áudio da tela) e repassa os
+// Entra na sala escondido, recebe cada live (tela + áudio da tela + vozes) e repassa os
 // pacotes RTP, sem decodificar, para um ffmpeg local que salva pedaços de ~4 s
 // em Matroska (-c copy). Mantém só os últimos minutos. Quando o site pede um
 // clipe, junta os pedaços que cobrem os últimos N segundos num MP4/WebM.
@@ -88,6 +88,7 @@ type recording struct {
 	mu        sync.Mutex
 	video     *forward
 	audio     *forward
+	voices    *forward // vozes do Discord (só entram no clipe)
 	videoMime string
 	cmd       *exec.Cmd
 	run       int
@@ -137,6 +138,11 @@ func (rec *recording) addTrack(track *webrtc.TrackRemote, pub *lksdk.RemoteTrack
 		}
 		rec.video = fw
 		rec.videoMime = strings.ToLower(track.Codec().MimeType)
+	} else if isVoices(pub) {
+		if rec.voices != nil {
+			close(rec.voices.stop)
+		}
+		rec.voices = fw
 	} else {
 		if rec.audio != nil {
 			close(rec.audio.stop)
@@ -202,6 +208,10 @@ func (rec *recording) removeTrack(track *webrtc.TrackRemote) {
 		close(rec.audio.stop)
 		rec.audio = nil
 	}
+	if rec.voices != nil && rec.voices.track == track {
+		close(rec.voices.stop)
+		rec.voices = nil
+	}
 	if rec.video == nil {
 		rec.stopFFmpeg() // sem vídeo, sem gravação (os pedaços continuam valendo pra clipar)
 	} else {
@@ -251,6 +261,9 @@ func (rec *recording) startFFmpeg() {
 	sdp := "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=fazol\r\nc=IN IP4 127.0.0.1\r\nt=0 0\r\n" + mediaLine("video", rec.video)
 	if rec.audio != nil {
 		sdp += mediaLine("audio", rec.audio)
+		if rec.voices != nil {
+			sdp += mediaLine("audio", rec.voices)
+		}
 	}
 	sdpPath := filepath.Join(rec.dir, fmt.Sprintf("run%04d.sdp", rec.run))
 	if err := os.WriteFile(sdpPath, []byte(sdp), 0o644); err != nil {
@@ -278,7 +291,7 @@ func (rec *recording) startFFmpeg() {
 		return
 	}
 	rec.cmd = cmd
-	log.Printf("[%s] gravando (%s%s)", rec.identity, rec.videoMime, map[bool]string{true: " + áudio", false: ""}[rec.audio != nil])
+	log.Printf("[%s] gravando (%s%s)", rec.identity, rec.videoMime, map[bool]string{true: " + áudio", false: ""}[rec.audio != nil]+map[bool]string{true: " + vozes", false: ""}[rec.audio != nil && rec.voices != nil])
 
 	// Pede um quadro-chave assim que o ffmpeg estiver ouvindo
 	video := rec.video
@@ -419,8 +432,19 @@ func makeClip(req clipRequest) (map[string]any, error) {
 	}
 	file := req.ID + "." + ext
 	out := filepath.Join(clipsDir, file)
-	args := []string{"-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-		"-f", "concat", "-safe", "0", "-i", list, "-map", "0", "-c", "copy"}
+	args := []string{"-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-f", "concat", "-safe", "0", "-i", list}
+	// Duas trilhas de áudio (som da live + vozes do Discord): junta numa só pro clipe
+	if audioStreams(chosen[0].path) >= 2 { // o concat segue as trilhas do primeiro pedaço
+		codec := "libopus"
+		if ext == "mp4" {
+			codec = "aac"
+		}
+		args = append(args,
+			"-filter_complex", "[0:a:0][0:a:1]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,alimiter=limit=0.97[a]",
+			"-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", codec, "-b:a", "160k")
+	} else {
+		args = append(args, "-map", "0", "-c", "copy")
+	}
 	if ext == "mp4" {
 		args = append(args, "-movflags", "+faststart")
 	}
@@ -436,6 +460,15 @@ func makeClip(req clipRequest) (map[string]any, error) {
 	duration := time.Since(chosen[0].start).Seconds()
 	log.Printf("[%s] clipe %s: %d pedaços, ~%.0f s, %.1f MB", req.Identity, file, len(chosen), duration, float64(info.Size())/1e6)
 	return map[string]any{"file": file, "mime": contentType, "size": info.Size(), "duration": duration}, nil
+}
+
+// Quantas trilhas de áudio o pedaço tem (2 = som da live + vozes do Discord).
+func audioStreams(path string) int {
+	out, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", path).Output()
+	if err != nil {
+		return 0
+	}
+	return len(strings.Fields(string(out)))
 }
 
 func serveHTTP() {
@@ -476,7 +509,12 @@ func serveHTTP() {
 
 func isScreen(pub *lksdk.RemoteTrackPublication) bool {
 	s := pub.Source()
-	return s == livekit.TrackSource_SCREEN_SHARE || s == livekit.TrackSource_SCREEN_SHARE_AUDIO
+	return s == livekit.TrackSource_SCREEN_SHARE || s == livekit.TrackSource_SCREEN_SHARE_AUDIO || isVoices(pub)
+}
+
+// Vozes do Discord de quem transmite pelo app (o site não toca; entram só nos clipes).
+func isVoices(pub *lksdk.RemoteTrackPublication) bool {
+	return pub.Name() == "voices" && pub.Kind() == lksdk.TrackKindAudio
 }
 
 func token(room string) (string, error) {
