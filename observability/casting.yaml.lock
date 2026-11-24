@@ -406,9 +406,11 @@ spec:
         POSTGRES_USER: signoz
   patches:
   - operations:
-    - op: replace
-      path: /networks/fazol-signoz-network/name
-      value: fazol-observability
+    - op: add
+      path: /networks/ingestion
+      value:
+        internal: true
+        name: fazol-observability
     - op: replace
       path: /services/fazol-signoz-signoz-0/ports
       value:
@@ -421,8 +423,10 @@ spec:
       - -c
       - /signoz-otel-collector migrate sync check && /signoz-otel-collector --config=/etc/otel-collector-config.yaml
     - op: add
-      path: /services/ingester/networks/fazol-signoz-network/aliases/-
-      value: fazol-otel-collector
+      path: /services/ingester/networks/ingestion
+      value:
+        aliases:
+        - fazol-otel-collector
     - op: add
       path: /services/fazol-signoz-telemetrystore-migrator/depends_on
       value:
@@ -456,8 +460,7 @@ spec:
           - job_name: fazol-livekit
             metric_relabel_configs:
             - action: drop
-              regex: .+
-              separator: ""
+              regex: .*[A-Za-z0-9_].*
               source_labels:
               - room
               - room_name

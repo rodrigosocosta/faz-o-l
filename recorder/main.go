@@ -126,7 +126,7 @@ func allocPort() int {
 func dialUDP(port int) *net.UDPConn {
 	conn, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: port})
 	if err != nil {
-		log.Printf("udp %d: %v", port, err)
+		slog.Warn("falha no envio UDP", "error", err)
 		return nil
 	}
 	return conn
@@ -272,7 +272,7 @@ func (rec *recording) startFFmpeg() {
 	}
 	sdpPath := filepath.Join(rec.dir, fmt.Sprintf("run%04d.sdp", rec.run))
 	if err := os.WriteFile(sdpPath, []byte(sdp), 0o644); err != nil {
-		log.Printf("[%s] sdp: %v", rec.identity, err)
+		slog.Warn("falha ao preparar SDP", "error", err)
 		return
 	}
 
@@ -292,7 +292,7 @@ func (rec *recording) startFFmpeg() {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
-		log.Printf("[%s] ffmpeg: %v", rec.identity, err)
+		slog.Warn("falha ao iniciar ffmpeg", "error", err)
 		return
 	}
 	rec.cmd = cmd
@@ -304,7 +304,20 @@ func (rec *recording) startFFmpeg() {
 		time.Sleep(400 * time.Millisecond)
 		video.rp.WritePLI(video.track.SSRC())
 	}()
-	go func() { _ = cmd.Wait() }()
+	go rec.waitFFmpeg(cmd)
+}
+
+func (rec *recording) waitFFmpeg(cmd *exec.Cmd) {
+	err := cmd.Wait()
+	rec.mu.Lock()
+	unexpected := rec.cmd == cmd
+	if unexpected {
+		rec.cmd = nil
+	}
+	rec.mu.Unlock()
+	if unexpected {
+		slog.Error("ffmpeg encerrou durante gravação", "error", err)
+	}
 }
 
 func (rec *recording) stopFFmpeg() {
@@ -501,7 +514,7 @@ func makeClip(ctx context.Context, req clipRequest) (result map[string]any, clip
 		return nil, fmt.Errorf("clipe vazio")
 	}
 	duration := time.Since(chosen[0].start).Seconds()
-	log.Printf("[%s] clipe %s: %d pedaços, ~%.0f s, %.1f MB", req.Identity, file, len(chosen), duration, float64(info.Size())/1e6)
+	slog.InfoContext(ctx, "clipe gerado", "segments", len(chosen), "duration", duration, "size", info.Size())
 	return map[string]any{"file": file, "mime": contentType, "size": info.Size(), "duration": duration}, nil
 }
 
@@ -527,7 +540,7 @@ func newHTTPHandler() http.Handler {
 		}
 		res, err := makeClip(r.Context(), req)
 		if err != nil {
-			slog.ErrorContext(r.Context(), "pedido de clipe falhou", "error", err)
+			// makeClip já registrou a falha no contexto do span de processamento.
 			status := http.StatusInternalServerError
 			if err == errTooEarly {
 				status = http.StatusConflict
@@ -604,12 +617,12 @@ func joinRoom(name string) {
 
 	tok, err := token(name)
 	if err != nil {
-		log.Printf("[%s] token: %v", name, err)
+		slog.Warn("falha ao criar token da sala", "error", err)
 		return
 	}
 	room, err := lksdk.ConnectToRoomWithToken(livekitURL, tok, callback, lksdk.WithAutoSubscribe(false))
 	if err != nil {
-		log.Printf("[%s] não consegui entrar: %v", name, err)
+		slog.Warn("falha ao entrar na sala", "error", err)
 		return
 	}
 	roomsMu.Lock()
@@ -669,7 +682,7 @@ func watchRooms() {
 		res, err := client.ListRooms(ctx, &livekit.ListRoomsRequest{})
 		cancel()
 		if err != nil {
-			log.Printf("listar salas: %v", err)
+			slog.Warn("falha ao listar salas", "error", err)
 			continue
 		}
 		live := map[string]bool{}

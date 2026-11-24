@@ -13,10 +13,11 @@ const noop = async () => {};
 const knownMethod = method => ['GET','POST','PUT','PATCH','DELETE','OPTIONS','HEAD'].includes(method) ? method : 'OTHER';
 
 export function sanitize(value) {
-  return String(value).replace(/https?:\/\/[^\s"'<>]+/gi, raw => {
-    try { const u = new URL(raw); return `${u.protocol}//${u.host}${u.pathname}`; } catch { return '[url]'; }
-  }).replace(/\b(Bearer\s+)\S+/gi, '$1[redacted]')
-    .replace(/\b(token|secret|password|code|cookie|authorization)=([^\s&,;]+)/gi, '$1=[redacted]');
+  return String(value).replace(/(?:https?|wss?):\/\/[^\s"'<>]+/gi, raw => {
+    try { const u = new URL(raw); return `${u.protocol}//${u.host}`; } catch { return '[url]'; }
+  }).replace(/\b(cookie|set-cookie|authorization)\s*:[^\r\n]+/gi, '$1: [redacted]')
+    .replace(/(["']?(?:access_token|refresh_token|client_secret|state|token|secret|password|code|cookie|authorization)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s&,;}\]]+)/gi, '$1[redacted]')
+    .replace(/\b(Bearer\s+)\S+/gi, '$1[redacted]').replace(/\?[^\s"'<>]*/g, '?[redacted]').slice(0, 8192);
 }
 
 export function emitLog(level, message) {
@@ -77,18 +78,24 @@ export function httpTelemetry(req, res, next) {
   const span = current.tracer.startSpan(method, { kind: SpanKind.SERVER }, parent);
   const started = performance.now();
   let ended = false;
-  const finish = () => {
+  const finish = (streaming = false) => {
     if (ended) return; ended = true;
     // req.route usa o padrão do Express, nunca o ID/URL enviado pelo usuário.
     const route = typeof req.route?.path === 'string' ? req.route.path : 'unmatched';
-    const status = res.writableFinished ? res.statusCode : 499;
+    const status = streaming || res.writableFinished ? res.statusCode : 499;
     const attrs = { 'http.request.method': method, 'http.route': route, 'http.response.status_code': status };
     span.updateName(`${method} ${route}`); span.setAttributes(attrs);
     if (status >= 500) span.setStatus({ code: SpanStatusCode.ERROR });
     current.requests.add(1, attrs); current.duration.record((performance.now() - started) / 1000, attrs);
     span.end();
   };
-  res.once('finish', finish); res.once('close', finish);
+  const writeHead = res.writeHead;
+  res.writeHead = function (...args) {
+    const result = writeHead.apply(this, args);
+    if (String(res.getHeader('content-type')).startsWith('text/event-stream')) finish(true);
+    return result;
+  };
+  res.once('finish', () => finish()); res.once('close', () => finish());
   context.with(trace.setSpan(parent, span), next);
 }
 

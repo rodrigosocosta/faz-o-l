@@ -28,9 +28,11 @@ spec:
   patches:
     - target: deployment/compose.yaml
       operations:
-        - op: replace
-          path: /networks/fazol-signoz-network/name
-          value: fazol-observability
+        - op: add
+          path: /networks/ingestion
+          value:
+            name: fazol-observability
+            internal: true
         - op: replace
           path: /services/fazol-signoz-signoz-0/ports
           value: ["127.0.0.1:8080:8080"]
@@ -42,8 +44,9 @@ spec:
             - -c
             - /signoz-otel-collector migrate sync check && /signoz-otel-collector --config=/etc/otel-collector-config.yaml
         - op: add
-          path: /services/ingester/networks/fazol-signoz-network/aliases/-
-          value: fazol-otel-collector
+          path: /services/ingester/networks/ingestion
+          value:
+            aliases: [fazol-otel-collector]
         - op: add
           path: /services/fazol-signoz-telemetrystore-migrator/depends_on
           value:
@@ -82,8 +85,7 @@ spec:
                     # Não exportar séries por usuário/sala/trilha; preservar agregados.
                     - action: drop
                       source_labels: [room, room_name, room_id, room_sid, participant_id, participant_sid, participant_identity, track_id, track_sid]
-                      separator: ""
-                      regex: .+
+                      regex: .*[A-Za-z0-9_].*
         - op: add
           path: /processors/resource~1livekit
           value:

@@ -56,5 +56,6 @@ jobs:
           COMPOSE_FILE=docker-compose.yml:docker-compose.caddy.yml:docker-compose.observability.yml docker compose config -q
           COMPOSE_FILE=docker-compose.yml:docker-compose.traefik.yml:docker-compose.observability.yml docker compose config -q
           docker compose -f observability/pours/deployment/compose.yaml config -q
+          python3 observability/config.test.py
       - name: Build da imagem
         run: docker build -t faz-o-l ./app

@@ -132,8 +132,7 @@ receivers:
       - job_name: fazol-livekit
         metric_relabel_configs:
         - action: drop
-          regex: .+
-          separator: ""
+          regex: .*[A-Za-z0-9_].*
           source_labels:
           - room
           - room_name

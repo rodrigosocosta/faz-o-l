@@ -1,7 +1,7 @@
 # Observabilidade do servidor com SigNoz próprio
 
 Data: 2026-11-23
-Estado: proposta para aprovação
+Estado: aprovado e implementado
 Branch: `feat/observabilidade-signoz`, baseada na `main` em `624ffcd`.
 Worktree: `/home/dric0s/.codex/worktrees/f245/faz-o-l`.
 
@@ -15,7 +15,7 @@ Hoje o Docker Compose inicia `app`, `recorder` e `livekit`, com Caddy ou Traefik
 
 1. Usar um SigNoz existente: exigiria apenas instrumentação e encaminhamento; depende de uma instância externa. O usuário escolheu hospedar no projeto.
 2. Hospedar SigNoz e coletar apenas logs e métricas: menos mudanças de código, mas dificulta seguir uma falha entre API e gravador.
-3. Hospedar SigNoz e integrar logs, métricas e traces: proposta recomendada pelo agente, porque permite relacionar a requisição de um clipe com seu processamento. Esta extensão de escopo ainda está sujeita à aprovação deste documento.
+3. Hospedar SigNoz e integrar logs, métricas e traces: proposta recomendada pelo agente, porque permite relacionar a requisição de um clipe com seu processamento. O escopo completo foi aprovado pelo usuário.
 
 ## Arquitetura proposta
 

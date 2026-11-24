@@ -1,6 +1,9 @@
 name: fazol-signoz
 networks:
   fazol-signoz-network:
+    name: fazol-signoz-network
+  ingestion:
+    internal: true
     name: fazol-observability
 services:
   fazol-signoz-metastore-postgres-0:
@@ -170,6 +173,8 @@ services:
       fazol-signoz-network:
         aliases:
         - fazol-signoz-ingester
+      ingestion:
+        aliases:
         - fazol-otel-collector
     restart: unless-stopped
     volumes:

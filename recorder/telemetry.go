@@ -31,8 +31,10 @@ import (
 )
 
 var telemetryEnabled bool
-var urlPattern = regexp.MustCompile(`https?://[^\s"'<>]+`)
-var secretPattern = regexp.MustCompile(`(?i)\b(token|secret|password|code|cookie|authorization)=[^\s&,;]+`)
+var urlPattern = regexp.MustCompile(`(?i)(https?|wss?)://[^\s"'<>]+`)
+var secretPattern = regexp.MustCompile(`(?i)(["']?(access_token|refresh_token|client_secret|state|token|secret|password|code|cookie|authorization)["']?\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s&,;}\]]+)`)
+var headerPattern = regexp.MustCompile(`(?i)\b(cookie|set-cookie|authorization)\s*:[^\r\n]+`)
+var queryPattern = regexp.MustCompile(`\?[^\s"'<>]*`)
 var bearerPattern = regexp.MustCompile(`(?i)Bearer\s+\S+`)
 
 func cleanMessage(message string) string {
@@ -41,10 +43,12 @@ func cleanMessage(message string) string {
 		if err != nil {
 			return "[url]"
 		}
-		return u.Scheme + "://" + u.Host + u.EscapedPath()
+		return u.Scheme + "://" + u.Host
 	})
-	message = secretPattern.ReplaceAllString(message, "$1=[redacted]")
+	message = headerPattern.ReplaceAllString(message, "$1: [redacted]")
+	message = secretPattern.ReplaceAllString(message, "${1}[redacted]")
 	message = bearerPattern.ReplaceAllString(message, "Bearer [redacted]")
+	message = queryPattern.ReplaceAllString(message, "?[redacted]")
 	if len(message) > 8192 {
 		message = message[:8192]
 	}
@@ -63,7 +67,12 @@ func (h telemetryLogHandler) Enabled(ctx context.Context, level slog.Level) bool
 func (h telemetryLogHandler) Handle(ctx context.Context, record slog.Record) error {
 	safe := slog.NewRecord(record.Time, record.Level, cleanMessage(record.Message), record.PC)
 	record.Attrs(func(a slog.Attr) bool {
-		if !strings.Contains(strings.ToLower(a.Key), "token") && !strings.Contains(strings.ToLower(a.Key), "secret") && !strings.Contains(strings.ToLower(a.Key), "password") && a.Key != "cookie" && a.Key != "authorization" {
+		key := strings.ToLower(a.Key)
+		if err, ok := a.Value.Any().(error); ok {
+			safe.AddAttrs(slog.String("error.type", fmt.Sprintf("%T", err)))
+			return true
+		}
+		if !strings.Contains(key, "token") && !strings.Contains(key, "secret") && !strings.Contains(key, "password") && key != "cookie" && key != "authorization" && key != "state" {
 			safe.AddAttrs(slog.String(a.Key, cleanMessage(a.Value.String())))
 		}
 		return true

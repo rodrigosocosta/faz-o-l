@@ -120,7 +120,7 @@ export async function startBot() {
       if (legacyGuildId) await client.application.commands.set([], legacyGuildId).catch(() => {});
       logger.info('[bot] Comandos /live e /convite registrados.');
     } catch (err) {
-      logger.error('[bot] Falha ao registrar comandos:', err.message);
+      logger.error('[bot] Falha ao registrar comandos:', err);
     }
   }
 
@@ -167,7 +167,7 @@ export async function startBot() {
         });
       }
     } catch (err) {
-      logger.error(`[bot] /${interaction.commandName}:`, err.message);
+      logger.error(`[bot] /${interaction.commandName}:`, err);
     }
   });
 
@@ -179,7 +179,7 @@ export async function startBot() {
       const channel = await client.channels.fetch(id);
       return channel?.isTextBased() ? channel : null;
     } catch (err) {
-      logger.error('[bot] Canal de texto inválido:', id, err.message);
+      logger.error('[bot] Canal de texto inválido:', id, err);
       return null;
     }
   }
@@ -217,7 +217,7 @@ export async function startBot() {
       const msg = await target.send({ embeds: [embed], components: [watchButton(channel)] });
       notifications.set(`${channel.id}|${identity}`, msg);
     } catch (err) {
-      logger.error('[bot] Falha ao enviar aviso:', err.message);
+      logger.error('[bot] Falha ao enviar aviso:', err);
     }
   });
 
@@ -247,7 +247,7 @@ export async function startBot() {
     try {
       eventMessages.set(channel.id, await target.send({ embeds: [embed], components: [watchButton(channel)] }));
     } catch (err) {
-      logger.error('[bot] Falha ao avisar evento:', err.message);
+      logger.error('[bot] Falha ao avisar evento:', err);
     }
   });
   liveEvents.on('event:end', ({ channel, event }) => {
@@ -293,7 +293,7 @@ export async function startBot() {
       const msg = await target.send(await clipMessage(channel, clip));
       sql('UPDATE clips SET discord_message = ? WHERE id = ?').run(`${target.id}:${msg.id}`, clip.id);
     } catch (err) {
-      logger.error('[bot] Falha ao postar clipe:', err.message);
+      logger.error('[bot] Falha ao postar clipe:', err);
     }
   });
 
@@ -307,7 +307,7 @@ export async function startBot() {
       if (!msg) return;
       await msg.edit({ ...(await clipMessage(channel, clip, Date.now().toString(36))), allowedMentions: { parse: [] } });
     } catch (err) {
-      logger.error('[bot] Falha ao atualizar post do clipe:', err.message);
+      logger.error('[bot] Falha ao atualizar post do clipe:', err);
     }
   });
 

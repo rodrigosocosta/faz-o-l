@@ -176,7 +176,7 @@ const VISIBLE = 'c.channel_id IN (SELECT channel_id FROM members WHERE user_id =
 export async function clipsRouter() {
   await fs.mkdir(CLIPS_DIR, { recursive: true });
   await cleanup();
-  setInterval(() => cleanup().catch((e) => logger.error('[clips] limpeza:', e.message)), 10 * 60 * 1000).unref();
+  setInterval(() => cleanup().catch((e) => logger.error('[clips] limpeza:', e)), 10 * 60 * 1000).unref();
   // Clipes que ficaram sem confirmar o título (aba fechada etc.)
   setInterval(() => {
     for (const { id } of sql('SELECT id FROM clips WHERE published = 0 AND created_at < ?').all(Date.now() - PUBLISH_FALLBACK_MS)) publish(id);
@@ -235,7 +235,7 @@ export async function clipsRouter() {
       }
       if (!r.ok) throw new Error(made.error || `recorder respondeu ${r.status}`);
     } catch (err) {
-      logger.error('[clips] falha ao clipar:', err.message);
+      logger.error('[clips] falha ao clipar:', err);
       return res.status(502).json({ error: 'Não consegui gerar o clipe. Tente de novo em alguns segundos.' });
     }
 

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -49,6 +50,11 @@ func TestTelemetryPropagatesAndExportsWithoutSecrets(t *testing.T) {
 	}
 	handler := instrumentHTTP(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		slog.ErrorContext(r.Context(), "failed https://user:password@example.com/clip?token=url-secret", "token", "attribute-secret")
+		slog.ErrorContext(r.Context(), "wss://user:ws-password@example.com/live?access_token=ws-secret")
+		slog.ErrorContext(r.Context(), "/callback?access_token=relative-secret&state=state-secret")
+		slog.ErrorContext(r.Context(), "Cookie: session=cookie-secret; other=other-secret")
+		slog.ErrorContext(r.Context(), `{"client_secret":"json-secret","access_token":"json-token"}`)
+		slog.ErrorContext(r.Context(), "upstream failed", "error", errors.New("opaque-upstream-secret"))
 		_, _ = w.Write([]byte(trace.SpanContextFromContext(r.Context()).TraceID().String()))
 	}))
 	request := httptest.NewRequest("POST", "http://recorder/clip?room=private-room", nil)
@@ -86,7 +92,7 @@ func TestTelemetryPropagatesAndExportsWithoutSecrets(t *testing.T) {
 		t.Fatal("log sem trace")
 	}
 	encoded := protojson.Format(&spans) + protojson.Format(&logs) + protojson.Format(&metrics)
-	for _, secret := range []string{"password", "url-secret", "attribute-secret", "private-room"} {
+	for _, secret := range []string{"password", "url-secret", "attribute-secret", "private-room", "ws-password", "ws-secret", "relative-secret", "state-secret", "cookie-secret", "other-secret", "json-secret", "json-token", "opaque-upstream-secret"} {
 		if strings.Contains(encoded, secret) {
 			t.Fatalf("vazou %s", secret)
 		}

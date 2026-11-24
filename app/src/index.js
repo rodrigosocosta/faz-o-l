@@ -1,3 +1,4 @@
+import { registerPageRoutes } from './page-routes.js';
 import { httpTelemetry } from './telemetry.js';
 import { logger } from './logger.js';
 import path from 'node:path';
@@ -60,7 +61,7 @@ app.use(
 app.use(express.static(publicDir, { setHeaders: revalidate }));
 
 // Rotas do site (canal, perfil, convite): o app.js decide o que mostrar
-app.get(['/c/:id', '/u/:username', '/convite/:code'], (_req, res) => {
+registerPageRoutes(app, (_req, res) => {
   revalidate(res);
   res.sendFile(path.join(publicDir, 'index.html'));
 });
@@ -69,4 +70,4 @@ export const server = app.listen(config.port, () => {
   logger.info(`[app] Faz o L rodando em ${config.publicUrl} (porta ${config.port}, login: ${config.authMode})`);
 });
 
-startBot().catch((err) => logger.error('[bot] Não foi possível iniciar o bot:', err.message));
+startBot().catch((err) => logger.error('[bot] Não foi possível iniciar o bot:', err));

@@ -182,7 +182,7 @@ export function authRouter() {
       }
       res.redirect(safeNext(saved.next));
     } catch (err) {
-      logger.error('[auth] Falha no login do Discord:', err.message);
+      logger.error('[auth] Falha no login do Discord:', err);
       res.redirect('/?erro=login');
     }
   });

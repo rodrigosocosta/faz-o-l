@@ -12,7 +12,7 @@ Na raiz do projeto:
 sh observability/stack.sh up
 ```
 
-O comando aguarda até dez minutos pela inicialização, incluindo as migrações do ClickHouse. Verifique o resultado com `sh observability/stack.sh status`. Os serviços usam o projeto `fazol-signoz`, rede `fazol-observability` e volumes próprios.
+O comando aguarda até dez minutos pela inicialização, incluindo as migrações do ClickHouse. Verifique o resultado com `sh observability/stack.sh status`. Os serviços usam o projeto `fazol-signoz` e volumes próprios. Somente o collector participa da rede de ingestão `fazol-observability`; os bancos e o painel usam uma rede separada da aplicação.
 
 Acrescente o overlay ao `COMPOSE_FILE` do `.env`, mantendo o proxy escolhido:
 
@@ -48,11 +48,11 @@ Depois abra o mesmo endereço local. Nenhuma porta de ingestão é publicada no 
 
 Em **Services/APM**, procure `fazol-app` e `fazol-recorder`. Ao gerar um clipe, o trace da requisição inclui a chamada HTTP entre os serviços e o processamento no gravador. Uma espera de aproximadamente dez segundos com `recorder.wait_segments` costuma indicar que ainda não há segmentos para esse clipe. Uma falha de ffmpeg aparece em `recorder.ffmpeg` com status de erro.
 
-Em **Logs**, filtre por `service.name` e severidade. Logs produzidos durante uma operação têm o trace correspondente; eventos de background podem não ter trace. A saída do console continua disponível pelo Docker. Ela não é coletada uma segunda vez.
+Em **Logs**, filtre por `service.name` e severidade. Logs produzidos durante uma operação têm o trace correspondente; eventos de background podem não ter trace. A saída do console continua disponível pelo Docker. Ela não é coletada uma segunda vez. Erros de upstream exportam classe e mensagens operacionais controladas, sem o texto bruto potencialmente sensível.
 
 No explorador de **Metrics**, procure `http.server.request.duration`, `http.server.request.count`, `fazol.recorder.clips.count`, `fazol.recorder.clip.duration` e `fazol.recorder.recordings.active`. O nome final exibido pode ser normalizado pelo SigNoz. As métricas do LiveKit vêm do endpoint interno `:6789/metrics`; séries por sala, participante ou trilha são descartadas para limitar cardinalidade.
 
-A telemetria não inclui cookies, cabeçalhos de autenticação, corpos de requisição, URLs completas ou query strings. Rotas usam o padrão (`:id`), e IDs não viram dimensões das métricas. Mensagens de logs removem credenciais e queries de URLs; evite incluir segredos em texto livre nos novos logs.
+A telemetria não inclui cookies, cabeçalhos de autenticação, corpos de requisição, URLs completas ou query strings. Rotas usam o padrão (`:id`), e IDs não viram dimensões das métricas. Mensagens de logs removem credenciais, caminhos e queries de URLs; evite incluir segredos em texto livre nos novos logs.
 
 ## Recursos e retenção
 
@@ -65,6 +65,7 @@ Os SDKs usam filas limitadas e exportação em lotes, com timeout de um segundo 
 ```bash
 sh observability/stack.sh logs
 sh observability/stack.sh status
+sh observability/stack.sh config
 sh observability/stack.sh down
 ```
 
