@@ -4,3 +4,6 @@ node_modules/
 .DS_Store
 desktop/release.conf.json
 .claude/settings.local.json
+
+.superpowers/
+observability/.cache/

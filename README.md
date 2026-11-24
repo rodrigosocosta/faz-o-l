@@ -164,3 +164,7 @@ Abra http://localhost:3000. O `localhost` conta como contexto seguro, então a c
 ## Licença
 
 [MIT](LICENSE)
+
+## Observabilidade
+
+O projeto oferece uma stack opcional de SigNoz próprio para traces, logs e métricas da API, do gravador e métricas do LiveKit. Consulte [observability/README.md](observability/README.md) para ativar com Caddy ou Traefik, acessar o painel local e operar a stack.

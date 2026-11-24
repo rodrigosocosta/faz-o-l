@@ -15,6 +15,21 @@ jobs:
       - name: Instalar dependências
         working-directory: app
         run: npm ci
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: recorder/go.mod
+          cache-dependency-path: recorder/go.sum
+      - name: Testar telemetria da API
+        working-directory: app
+        run: npm test
+      - name: Testar e compilar gravador
+        working-directory: recorder
+        run: |
+          go test -race ./...
+          go vet ./...
+          go build -o /tmp/fazol-recorder-otel .
+      - name: Testar trace distribuído Node para Go
+        run: node observability/test-integration.mjs /tmp/fazol-recorder-otel
       - name: Checar sintaxe
         working-directory: app
         run: npm run check
@@ -32,11 +47,14 @@ jobs:
           CREATOR_DISCORD_IDS: "11111"
         run: node smoke.test.mjs
       - name: Checar install.sh
-        run: bash -n install.sh
+        run: bash -n install.sh && sh -n observability/stack.sh
       - name: Validar docker-compose (Caddy e Traefik)
         run: |
           cp .env.example .env
           COMPOSE_FILE=docker-compose.yml:docker-compose.caddy.yml docker compose config -q
           COMPOSE_FILE=docker-compose.yml:docker-compose.traefik.yml docker compose config -q
+          COMPOSE_FILE=docker-compose.yml:docker-compose.caddy.yml:docker-compose.observability.yml docker compose config -q
+          COMPOSE_FILE=docker-compose.yml:docker-compose.traefik.yml:docker-compose.observability.yml docker compose config -q
+          docker compose -f observability/pours/deployment/compose.yaml config -q
       - name: Build da imagem
         run: docker build -t faz-o-l ./app

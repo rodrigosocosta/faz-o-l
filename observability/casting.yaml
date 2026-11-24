@@ -1,0 +1,102 @@
+# Gerado com Foundry v0.5.0. Personalizações pertencem a este arquivo.
+apiVersion: v1alpha1
+kind: Installation
+metadata:
+  name: fazol-signoz
+spec:
+  deployment:
+    flavor: compose
+    mode: docker
+  signoz:
+    spec:
+      image: signoz/signoz:v0.151.0
+  ingester:
+    spec:
+      image: signoz/signoz-otel-collector:v0.144.18
+      env:
+        OTEL_ENVIRONMENT: "${OTEL_ENVIRONMENT:-production}"
+  telemetrystore:
+    spec:
+      image: clickhouse/clickhouse-server:25.12.5
+  telemetrykeeper:
+    spec:
+      image: clickhouse/clickhouse-keeper:25.12.5
+  metastore:
+    kind: postgres
+    spec:
+      image: postgres:16@sha256:3950ad7c3148ca2175ef1b6c36c9efbf78957ae8fbe8b3a5d7c35af50500382f
+  patches:
+    - target: deployment/compose.yaml
+      operations:
+        - op: replace
+          path: /networks/fazol-signoz-network/name
+          value: fazol-observability
+        - op: replace
+          path: /services/fazol-signoz-signoz-0/ports
+          value: ["127.0.0.1:8080:8080"]
+        - op: remove
+          path: /services/ingester/ports
+        - op: replace
+          path: /services/ingester/command
+          value:
+            - -c
+            - /signoz-otel-collector migrate sync check && /signoz-otel-collector --config=/etc/otel-collector-config.yaml
+        - op: add
+          path: /services/ingester/networks/fazol-signoz-network/aliases/-
+          value: fazol-otel-collector
+        - op: add
+          path: /services/fazol-signoz-telemetrystore-migrator/depends_on
+          value:
+            fazol-signoz-telemetrystore-clickhouse-0-0:
+              condition: service_healthy
+        - op: add
+          path: /services/fazol-signoz-signoz-0/depends_on
+          value:
+            fazol-signoz-metastore-postgres-0:
+              condition: service_healthy
+            fazol-signoz-telemetrystore-migrator:
+              condition: service_completed_successfully
+        - op: add
+          path: /services/ingester/depends_on
+          value:
+            fazol-signoz-signoz-0:
+              condition: service_healthy
+    - target: deployment/ingester/ingester.yaml
+      operations:
+        - op: replace
+          path: /processors/batch/send_batch_size
+          value: 512
+        - op: replace
+          path: /processors/batch/send_batch_max_size
+          value: 1024
+        - op: add
+          path: /receivers/prometheus~1livekit
+          value:
+            config:
+              scrape_configs:
+                - job_name: fazol-livekit
+                  scrape_interval: 15s
+                  static_configs:
+                    - targets: ["fazol-livekit-metrics:6789"]
+                  metric_relabel_configs:
+                    # Não exportar séries por usuário/sala/trilha; preservar agregados.
+                    - action: drop
+                      source_labels: [room, room_name, room_id, room_sid, participant_id, participant_sid, participant_identity, track_id, track_sid]
+                      separator: ""
+                      regex: .+
+        - op: add
+          path: /processors/resource~1livekit
+          value:
+            attributes:
+              - key: service.name
+                value: fazol-livekit
+                action: upsert
+              - key: deployment.environment.name
+                value: "${env:OTEL_ENVIRONMENT}"
+                action: upsert
+        - op: add
+          path: /service/pipelines/metrics~1livekit
+          value:
+            receivers: [prometheus/livekit]
+            processors: [resource/livekit, batch]
+            exporters: [signozclickhousemetrics, metadataexporter]
