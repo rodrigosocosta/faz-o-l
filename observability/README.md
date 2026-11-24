@@ -69,6 +69,16 @@ Para operar a publicação use também a opção `--traefik` nos comandos de sta
 
 ## O que observar
 
+### Logs do navegador e do desktop
+
+Após atualizar o app na VPS e recarregar a página, usuários autenticados enviam erros não tratados e `console.warn/error` em lotes de até 30 eventos. No SigNoz, filtre **Logs** por `service.name = fazol-app` e `client.platform = browser` ou `desktop`. A versão está em `client.version`; o componente, em `client.target`.
+
+O desktop precisa de uma compilação que inclua o comando `take_client_logs`. Ela preserva o arquivo `fazol.log` e disponibiliza uma fila nativa limitada ao webview do servidor configurado. O webview encaminha os eventos usando a sessão do usuário; nenhum token de ingestão SigNoz fica no cliente. Versões antigas continuam funcionando e enviam apenas os logs da página após atualizar o servidor.
+
+O envio ocorre a cada 15 segundos enquanto há uma sessão autenticada e o app está aberto. Eventos anteriores ao início da página e eventos ainda na fila quando o app fecha podem não chegar. Não há captura de telas, áudio ou corpos de requisição. Objetos completos de exceção não são enviados; mensagens de diagnóstico passam pelo filtro de credenciais do servidor. Os relatos dos clientes são dados não confiáveis.
+
+Limites: 120 eventos na fila local, até 24 KiB por lote no transporte, até 32 KiB por requisição no servidor e 120 eventos/minuto por usuário. Falhas de envio não bloqueiam a transmissão. Não é preciso alterar a stack SigNoz: basta reconstruir o serviço `app` e distribuir a nova compilação desktop.
+
 | Serviço | Dados |
 |---|---|
 | `fazol-app` | Requisições HTTP, chamadas ao gravador, duração/volume/status por rota, memória, CPU, uptime e logs do site/bot |

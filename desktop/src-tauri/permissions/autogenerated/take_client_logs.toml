@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-take-client-logs"
+description = "Enables the take_client_logs command without any pre-configured scope."
+commands.allow = ["take_client_logs"]
+
+[[permission]]
+identifier = "deny-take-client-logs"
+description = "Denies the take_client_logs command without any pre-configured scope."
+commands.deny = ["take_client_logs"]

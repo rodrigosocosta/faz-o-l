@@ -1,3 +1,4 @@
+import { startClientLogs } from '/client-logs.js';
 import {
   AudioPresets,
   DisconnectReason,
@@ -31,6 +32,7 @@ const state = {
   busy: false,
   leaving: false,
 };
+startClientLogs(()=>Boolean(state.me),SITE_VERSION);
 
 // ---------------- utilidades ----------------
 

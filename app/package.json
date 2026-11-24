@@ -8,8 +8,8 @@
   "scripts": {
     "start": "node src/start.js",
     "dev": "node --watch src/start.js",
-    "check": "for f in src/*.js public/app.js; do node --check $f || exit 1; done",
-    "test": "node --test telemetry.test.mjs"
+    "check": "for f in src/*.js public/*.js; do node --check $f || exit 1; done",
+    "test": "node --test telemetry.test.mjs client-logs.test.mjs client-transport.test.mjs"
   },
   "engines": {
     "node": ">=20"

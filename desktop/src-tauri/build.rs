@@ -4,6 +4,7 @@ fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
             "app_version",
+            "take_client_logs",
             "update_status",
             "get_server",
             "set_server",

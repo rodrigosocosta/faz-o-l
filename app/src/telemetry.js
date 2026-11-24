@@ -16,14 +16,14 @@ export function sanitize(value) {
   return String(value).replace(/(?:https?|wss?):\/\/[^\s"'<>]+/gi, raw => {
     try { const u = new URL(raw); return `${u.protocol}//${u.host}`; } catch { return '[url]'; }
   }).replace(/\b(cookie|set-cookie|authorization)\s*:[^\r\n]+/gi, '$1: [redacted]')
-    .replace(/(["']?(?:access_token|refresh_token|client_secret|state|token|secret|password|code|cookie|authorization)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s&,;}\]]+)/gi, '$1[redacted]')
+    .replace(/(["']?(?:access_token|refresh_token|client_secret|fol_session|state|token|secret|password|code|cookie|authorization)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s&,;}\]]+)/gi, '$1[redacted]')
     .replace(/\b(Bearer\s+)\S+/gi, '$1[redacted]').replace(/\?[^\s"'<>]*/g, '?[redacted]').slice(0, 8192);
 }
 
-export function emitLog(level, message) {
+export function emitLog(level, message, attributes = {}) {
   runtime?.logger.emit({
     severityNumber: { INFO: 9, WARN: 13, ERROR: 17 }[level],
-    severityText: level, body: sanitize(message), context: context.active(),
+    severityText: level, body: sanitize(message), context: context.active(), attributes,
   });
 }
 
