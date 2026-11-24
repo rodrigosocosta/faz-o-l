@@ -18,7 +18,7 @@ const QUALITY = {
 };
 
 // Versão do site (aparece no painel; ajuda a saber se o app pegou o código novo)
-const SITE_VERSION = '2026-11-22.19';
+const SITE_VERSION = '2026-11-23.1';
 
 const $ = (sel) => document.querySelector(sel);
 const state = {
@@ -516,7 +516,9 @@ function onTrackUnsubscribed(track, publication, participant) {
   if (!tile) return;
   if (track.kind === Track.Kind.Video) {
     removeTile(participant.identity);
-  } else {
+  } else if (tile.audioTrack === track) {
+    // Só o som da live: a trilha "voices" (recusada ao chegar) também passa por aqui,
+    // e zerar o som da live por causa dela deixava a live sem áudio ao desmutar
     tile.audioTrack = null;
     applyVolume(tile);
   }
