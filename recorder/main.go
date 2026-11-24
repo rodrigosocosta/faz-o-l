@@ -10,17 +10,22 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/livekit/protocol/auth"
@@ -375,7 +380,19 @@ var safeID = regexp.MustCompile(`^[A-Za-z0-9_-]{6,32}$`)
 // errTooEarly: a live acabou de começar e ainda não tem nada gravado.
 var errTooEarly = fmt.Errorf("a live acabou de começar, ainda não tem nada gravado")
 
-func makeClip(req clipRequest) (map[string]any, error) {
+func makeClip(ctx context.Context, req clipRequest) (result map[string]any, clipErr error) {
+	ctx, span := otel.Tracer("fazol.recorder").Start(ctx, "recorder.clip")
+	started := time.Now()
+	defer func() {
+		if clipErr != nil {
+			span.SetStatus(codes.Error, "")
+			slog.ErrorContext(ctx, "clipe falhou", "error", clipErr)
+		}
+		clipObservation(ctx, started, clipErr)
+		span.End()
+	}()
+	_, waiting := otel.Tracer("fazol.recorder").Start(ctx, "recorder.wait_segments")
+	defer waiting.End()
 	ensureJoined(req.Room)
 
 	// Live que acabou de começar: espera o gravador entrar e o primeiro pedaço sair
@@ -400,8 +417,13 @@ func makeClip(req clipRequest) (map[string]any, error) {
 		if time.Now().After(deadline) {
 			return nil, errTooEarly
 		}
-		time.Sleep(500 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
 	}
+	waiting.End()
 	sort.Slice(segs, func(i, j int) bool { return segs[i].start.Before(segs[j].start) })
 
 	// Começa no último pedaço que inicia antes de "agora - N" (sempre num quadro-chave)
@@ -419,7 +441,7 @@ func makeClip(req clipRequest) (map[string]any, error) {
 	// primeiro pedaço: sem isso o clipe inteiro sairia sem as vozes.
 	withVoices := false
 	for i := len(chosen) - 1; i >= 0 && i >= len(chosen)-3; i-- {
-		if audioStreams(chosen[i].path) >= 2 {
+		if audioStreams(ctx, chosen[i].path) >= 2 {
 			withVoices = true
 			break
 		}
@@ -427,7 +449,7 @@ func makeClip(req clipRequest) (map[string]any, error) {
 	if withVoices {
 		var kept []segment
 		for _, s := range chosen {
-			if audioStreams(s.path) != 1 { // 0 = pedaço ainda sendo escrito: fica
+			if audioStreams(ctx, s.path) != 1 { // 0 = pedaço ainda sendo escrito: fica
 				kept = append(kept, s)
 			}
 		}
@@ -471,8 +493,7 @@ func makeClip(req clipRequest) (map[string]any, error) {
 		args = append(args, "-movflags", "+faststart")
 	}
 	args = append(args, out)
-	cmd := exec.Command("ffmpeg", args...)
-	if output, err := cmd.CombinedOutput(); err != nil {
+	if output, err := clipCommandOutput(ctx, "ffmpeg", args...); err != nil {
 		return nil, fmt.Errorf("ffmpeg: %v: %s", err, strings.TrimSpace(string(output)))
 	}
 	info, err := os.Stat(out)
@@ -485,17 +506,18 @@ func makeClip(req clipRequest) (map[string]any, error) {
 }
 
 // Quantas trilhas de áudio o pedaço tem (2 = som da live + vozes do Discord).
-func audioStreams(path string) int {
-	out, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", path).Output()
+func audioStreams(ctx context.Context, path string) int {
+	out, err := clipCommandOutput(ctx, "ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", path)
 	if err != nil {
 		return 0
 	}
 	return len(strings.Fields(string(out)))
 }
 
-func serveHTTP() {
-	http.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
-	http.HandleFunc("/clip", func(w http.ResponseWriter, r *http.Request) {
+func newHTTPHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
+	mux.HandleFunc("/clip", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		var req clipRequest
 		if r.Method != http.MethodPost || json.NewDecoder(r.Body).Decode(&req) != nil || !safeID.MatchString(req.ID) || req.Seconds <= 0 || req.Seconds > 180 {
@@ -503,9 +525,9 @@ func serveHTTP() {
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "pedido inválido"})
 			return
 		}
-		res, err := makeClip(req)
+		res, err := makeClip(r.Context(), req)
 		if err != nil {
-			log.Printf("clipe falhou: %v", err)
+			slog.ErrorContext(r.Context(), "pedido de clipe falhou", "error", err)
 			status := http.StatusInternalServerError
 			if err == errTooEarly {
 				status = http.StatusConflict
@@ -517,12 +539,11 @@ func serveHTTP() {
 		_ = json.NewEncoder(w).Encode(res)
 	})
 	// O site avisa assim que uma live começa: o gravador entra na hora (sem esperar a varredura)
-	http.HandleFunc("/join", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/join", func(w http.ResponseWriter, r *http.Request) {
 		ensureJoined(r.URL.Query().Get("room"))
 		w.WriteHeader(http.StatusNoContent)
 	})
-	log.Printf("API de clipes em %s", listenAddr)
-	log.Fatal(http.ListenAndServe(listenAddr, nil))
+	return instrumentHTTP(mux)
 }
 
 // ---------------------------------------------------------------------------
@@ -695,6 +716,12 @@ func watchRooms() {
 }
 
 func main() {
+	shutdown, err := initTelemetry(context.Background())
+	if err != nil {
+		slog.Warn("telemetria desativada: configuração inválida")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	if apiKey == "" || apiSecret == "" {
 		log.Fatal("defina LIVEKIT_API_KEY e LIVEKIT_API_SECRET")
 	}
@@ -707,6 +734,22 @@ func main() {
 		}
 	}
 	go janitor()
-	go serveHTTP()
-	watchRooms()
+	server := &http.Server{Addr: listenAddr, Handler: newHTTPHandler(), ReadHeaderTimeout: 5 * time.Second}
+	go func() {
+		log.Printf("API de clipes em %s", listenAddr)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("API de clipes falhou")
+			stop()
+		}
+	}()
+	go watchRooms()
+	<-ctx.Done()
+	timeout, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = server.Shutdown(timeout)
+	if shutdown != nil {
+		flush, cancelFlush := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancelFlush()
+		_ = shutdown(flush)
+	}
 }
