@@ -16,7 +16,7 @@ use livekit::webrtc::prelude::{I420Buffer, VideoFrame, VideoRotation};
 use livekit::webrtc::video_source::native::NativeVideoSource;
 use windows_capture::capture::{CaptureControl, Context, GraphicsCaptureApiHandler};
 use windows_capture::frame::Frame;
-use windows_capture::graphics_capture_api::InternalCaptureControl;
+use windows_capture::graphics_capture_api::{GraphicsCaptureApi, InternalCaptureControl};
 use windows_capture::monitor::Monitor;
 use windows_capture::settings::{
     ColorFormat, CursorCaptureSettings, DirtyRegionSettings, DrawBorderSettings,
@@ -121,17 +121,26 @@ pub struct Flags {
     pub stretch: bool,
 }
 
+/// `Flags` + o intervalo mínimo entre quadros, quando o Windows não limita sozinho.
+pub struct HandlerFlags {
+    flags: Flags,
+    throttle: Option<Duration>,
+}
+
 pub struct ScreenHandler {
     flags: Flags,
     started: Instant,
+    throttle: Option<Duration>,
+    last_frame: Option<Instant>,
 }
 
 impl GraphicsCaptureApiHandler for ScreenHandler {
-    type Flags = Flags;
+    type Flags = HandlerFlags;
     type Error = BoxError;
 
     fn new(ctx: Context<Self::Flags>) -> Result<Self, Self::Error> {
-        Ok(Self { flags: ctx.flags, started: Instant::now() })
+        let HandlerFlags { flags, throttle } = ctx.flags;
+        Ok(Self { flags, started: Instant::now(), throttle, last_frame: None })
     }
 
     fn on_frame_arrived(
@@ -142,6 +151,15 @@ impl GraphicsCaptureApiHandler for ScreenHandler {
         if self.flags.stop.load(Ordering::Relaxed) {
             capture_control.stop();
             return Ok(());
+        }
+        // Windows sem limite de intervalo (Windows 10): manda um quadro por atualização
+        // da tela (144 Hz...); descarta o que passar do fps pedido
+        if let Some(min) = self.throttle {
+            let now = Instant::now();
+            if self.last_frame.is_some_and(|t| now.duration_since(t) < min) {
+                return Ok(());
+            }
+            self.last_frame = Some(now);
         }
 
         let src_w = frame.width() & !1;
@@ -234,14 +252,36 @@ impl GraphicsCaptureApiHandler for ScreenHandler {
 
 pub fn start(target: Target, fps: u32, flags: Flags) -> Result<Control, String> {
     let interval = Duration::from_micros(1_000_000 / fps.max(1) as u64);
+    // Opções que só existem em versões mais novas do Windows (tirar a borda amarela,
+    // limitar o intervalo, ligar o cursor): sem suporte, fica o padrão do sistema em
+    // vez de a captura falhar inteira
+    let supported = |check: fn() -> Result<bool, windows_capture::graphics_capture_api::Error>| check().unwrap_or(false);
+    let cursor = if supported(GraphicsCaptureApi::is_cursor_settings_supported) {
+        CursorCaptureSettings::WithCursor
+    } else {
+        CursorCaptureSettings::Default
+    };
+    let border = if supported(GraphicsCaptureApi::is_border_settings_supported) {
+        DrawBorderSettings::WithoutBorder
+    } else {
+        DrawBorderSettings::Default
+    };
+    let (min_interval, throttle) = if supported(GraphicsCaptureApi::is_minimum_update_interval_supported) {
+        (MinimumUpdateIntervalSettings::Custom(interval), None)
+    } else {
+        // Folga de 10%: um quadro que chega um pouco adiantado não é descartado
+        (MinimumUpdateIntervalSettings::Default, Some(interval * 9 / 10))
+    };
+    log::info!("captura: cursor {cursor:?}, borda {border:?}, intervalo {min_interval:?}");
+    let flags = HandlerFlags { flags, throttle };
     macro_rules! run {
         ($item:expr) => {
             ScreenHandler::start_free_threaded(Settings::new(
                 $item,
-                CursorCaptureSettings::WithCursor,
-                DrawBorderSettings::WithoutBorder,
+                cursor,
+                border,
                 SecondaryWindowSettings::Default,
-                MinimumUpdateIntervalSettings::Custom(interval),
+                min_interval,
                 DirtyRegionSettings::Default,
                 ColorFormat::Bgra8,
                 flags,
