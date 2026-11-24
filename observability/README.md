@@ -79,9 +79,15 @@ O envio ocorre a cada 15 segundos enquanto há uma sessão autenticada e o app e
 
 Limites: 120 eventos na fila local, até 24 KiB por lote no transporte, até 32 KiB por requisição no servidor e 120 eventos/minuto por usuário. Falhas de envio não bloqueiam a transmissão. Não é preciso alterar a stack SigNoz: basta reconstruir o serviço `app` e distribuir a nova compilação desktop.
 
+### Eventos de produto: clipes e transmissões
+
+O serviço `fazol-app` registra `clip.created` somente depois que o clipe foi gerado pelo recorder e salvo no banco; o evento inclui duração, tamanho, canal, criador e streamer. Nos webhooks do LiveKit, `stream.started` e `stream.ended` marcam o início/fim real da publicação de tela, com nome/ID do streamer, canal e `stream.platform` (`browser` ou `desktop`). Assim, quem está no ar pode ser encontrado em **Logs** filtrando `event.name = stream.started` e conferindo o último evento de cada `streamer.id` (um `stream.ended` posterior indica que parou).
+
+As métricas de baixa cardinalidade são `fazol.clips.created`, `fazol.streams.started`, `fazol.streams.ended` e `fazol.streams.active`. A última é a quantidade de transmissões ativas observadas pelo processo do app; identidade e nome ficam nos logs, não como dimensões de métricas. Os contadores são cumulativos desde o início do processo e podem ser agrupados por `client.platform` nas métricas de início/fim.
+
 | Serviço | Dados |
 |---|---|
-| `fazol-app` | Requisições HTTP, chamadas ao gravador, duração/volume/status por rota, memória, CPU, uptime e logs do site/bot |
+| `fazol-app` | Requisições HTTP, chamadas ao gravador, duração/volume/status por rota, contagem de clipes e transmissões, transmissões ativas, memória, CPU, uptime e logs do site/bot |
 | `fazol-recorder` | HTTP, espera por segmentos, execução de ffmpeg/ffprobe, resultado/duração dos clipes, salas e gravações ativas, memória, goroutines e logs |
 | `fazol-livekit` | Métricas Prometheus agregadas disponíveis na versão do LiveKit em uso |
 
@@ -89,7 +95,7 @@ Em **Services/APM**, procure `fazol-app` e `fazol-recorder`. Ao gerar um clipe, 
 
 Em **Logs**, filtre por `service.name` e severidade. Logs produzidos durante uma operação têm o trace correspondente; eventos de background podem não ter trace. A saída do console continua disponível pelo Docker. Ela não é coletada uma segunda vez. Erros de upstream exportam classe e mensagens operacionais controladas, sem o texto bruto potencialmente sensível.
 
-No explorador de **Metrics**, procure `http.server.request.duration`, `http.server.request.count`, `fazol.recorder.clips.count`, `fazol.recorder.clip.duration` e `fazol.recorder.recordings.active`. O nome final exibido pode ser normalizado pelo SigNoz. As métricas do LiveKit vêm do endpoint interno `:6789/metrics`; séries por sala, participante ou trilha são descartadas para limitar cardinalidade.
+No explorador de **Metrics**, procure `http.server.request.duration`, `http.server.request.count`, `fazol.clips.created`, `fazol.streams.started`, `fazol.streams.ended`, `fazol.streams.active`, `fazol.recorder.clips.count`, `fazol.recorder.clip.duration` e `fazol.recorder.recordings.active`. O nome final exibido pode ser normalizado pelo SigNoz. As métricas do LiveKit vêm do endpoint interno `:6789/metrics`; séries por sala, participante ou trilha são descartadas para limitar cardinalidade.
 
 A telemetria não inclui cookies, cabeçalhos de autenticação, corpos de requisição, URLs completas ou query strings. Rotas usam o padrão (`:id`), e IDs não viram dimensões das métricas. Mensagens de logs removem credenciais, caminhos e queries de URLs; evite incluir segredos em texto livre nos novos logs.
 

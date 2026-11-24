@@ -1,4 +1,4 @@
-import { tracedFetch } from './telemetry.js';
+import { recordClipCreated, tracedFetch } from './telemetry.js';
 import { logger } from './logger.js';
 // Clipes: os últimos 30 s / 1 min / 2 min de uma live, gerados pelo serviço "recorder".
 //
@@ -243,6 +243,13 @@ export async function clipsRouter() {
            creator_id, creator_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(id, req.channel.id, made.file, made.mime, made.size || 0, made.duration || 0, seconds,
         ownerOf(identity), streamer.name, req.user.id, req.user.name, Date.now());
+    recordClipCreated();
+    logger.event('INFO', 'Clipe gerado', {
+      'event.name': 'clip.created', 'clip.duration_seconds': made.duration || 0,
+      'clip.size_bytes': made.size || 0, 'streamer.id': ownerOf(identity), 'streamer.name': streamer.name,
+      'creator.id': req.user.id, 'creator.name': req.user.name,
+      'channel.id': req.channel.id, 'channel.name': req.channel.name,
+    });
     res.json(publicClip(getClip(id), req.user, req.channel));
   });
 

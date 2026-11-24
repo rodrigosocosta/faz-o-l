@@ -9,6 +9,7 @@ import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
 import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http';
 
 let runtime;
+const observedStreams = new Set();
 const noop = async () => {};
 const knownMethod = method => ['GET','POST','PUT','PATCH','DELETE','OPTIONS','HEAD'].includes(method) ? method : 'OTHER';
 
@@ -21,9 +22,13 @@ export function sanitize(value) {
 }
 
 export function emitLog(level, message, attributes = {}) {
+  const safeAttributes = Object.fromEntries(Object.entries(attributes).map(([key, value]) => [
+    key,
+    typeof value === 'string' ? sanitize(value).slice(0, 200) : value,
+  ]));
   runtime?.logger.emit({
     severityNumber: { INFO: 9, WARN: 13, ERROR: 17 }[level],
-    severityText: level, body: sanitize(message), context: context.active(), attributes,
+    severityText: level, body: sanitize(message), context: context.active(), attributes: safeAttributes,
   });
 }
 
@@ -54,6 +59,12 @@ export function initTelemetry({
   const meter = meters.getMeter('fazol.http');
   const requests = meter.createCounter('http.server.request.count');
   const duration = meter.createHistogram('http.server.request.duration', { unit: 's' });
+  const businessMeter = meters.getMeter('fazol.business');
+  const clipsCreated = businessMeter.createCounter('fazol.clips.created', { description: 'Clipes gerados com sucesso' });
+  const streamsStarted = businessMeter.createCounter('fazol.streams.started', { description: 'Transmissões iniciadas' });
+  const streamsEnded = businessMeter.createCounter('fazol.streams.ended', { description: 'Transmissões encerradas' });
+  businessMeter.createObservableGauge('fazol.streams.active', { description: 'Transmissões ativas observadas pelo serviço' })
+    .addCallback(result => result.observe(observedStreams.size));
   meter.createObservableGauge('process.memory.usage', { unit: 'By' }).addCallback(result => result.observe(process.memoryUsage().rss));
   meter.createObservableGauge('process.uptime', { unit: 's' }).addCallback(result => result.observe(process.uptime()));
   meter.createObservableCounter('process.cpu.time', { unit: 's' }).addCallback(result => {
@@ -66,8 +77,25 @@ export function initTelemetry({
       await Promise.allSettled([traces.shutdown(), meters.shutdown(), logs.shutdown()]);
     },
   };
-  runtime = { tracer: trace.getTracer('fazol.http'), logger: logs.getLogger('fazol'), requests, duration, lifecycle };
+  runtime = { tracer: trace.getTracer('fazol.http'), logger: logs.getLogger('fazol'), requests, duration, clipsCreated, streamsStarted, streamsEnded, lifecycle };
   return lifecycle;
+}
+
+export function recordClipCreated() {
+  runtime?.clipsCreated.add(1);
+}
+
+export function recordStreamStarted(identity, platform) {
+  if (observedStreams.has(identity)) return false;
+  observedStreams.add(identity);
+  runtime?.streamsStarted.add(1, { 'client.platform': platform });
+  return true;
+}
+
+export function recordStreamEnded(identity, platform) {
+  if (!observedStreams.delete(identity)) return false;
+  runtime?.streamsEnded.add(1, { 'client.platform': platform });
+  return true;
 }
 
 export function httpTelemetry(req, res, next) {
