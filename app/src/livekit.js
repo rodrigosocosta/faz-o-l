@@ -1,3 +1,4 @@
+import { logger } from './logger.js';
 import { EventEmitter } from 'node:events';
 import express from 'express';
 import { AccessToken, RoomServiceClient, TrackSource, WebhookReceiver } from 'livekit-server-sdk';
@@ -258,7 +259,7 @@ export function livekitRouter() {
     try {
       await ensureRoom(room);
     } catch (err) {
-      console.error('[livekit] Não consegui criar/verificar a sala:', err.message);
+      logger.error('[livekit] Não consegui criar/verificar a sala:', err.message);
       return res.status(503).json({ error: 'Servidor de vídeo indisponível. Tente novamente.' });
     }
 
@@ -306,7 +307,7 @@ export function livekitRouter() {
       emitUpdate(room);
       res.json({ ok: true });
     } catch (err) {
-      console.error('[livekit] stream/start:', err.message);
+      logger.error('[livekit] stream/start:', err.message);
       res.status(500).json({ error: 'Não foi possível liberar a transmissão.' });
     }
   });
@@ -356,7 +357,7 @@ export function livekitRouter() {
         identity,
       });
     } catch (err) {
-      console.error('[livekit] desktop/token:', err.message);
+      logger.error('[livekit] desktop/token:', err.message);
       res.status(500).json({ error: 'Não foi possível liberar a transmissão.' });
     }
   });

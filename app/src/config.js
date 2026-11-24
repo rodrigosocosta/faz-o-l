@@ -1,3 +1,4 @@
+import { logger } from './logger.js';
 const env = process.env;
 
 function int(value, fallback) {
@@ -8,7 +9,7 @@ function int(value, fallback) {
 function required(name) {
   const value = env[name];
   if (!value) {
-    console.error(`[config] Variável obrigatória ausente: ${name}`);
+    logger.error(`[config] Variável obrigatória ausente: ${name}`);
     process.exit(1);
   }
   return value;

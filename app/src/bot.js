@@ -1,3 +1,4 @@
+import { logger } from './logger.js';
 import {
   ActionRowBuilder,
   ActivityType,
@@ -59,7 +60,7 @@ async function statusEmbed(channel) {
 export async function startBot() {
   const { botToken, guildId: legacyGuildId } = config.discord;
   if (!botToken) {
-    console.log('[bot] DISCORD_BOT_TOKEN não definido — bot desativado.');
+    logger.info('[bot] DISCORD_BOT_TOKEN não definido — bot desativado.');
     return;
   }
 
@@ -89,7 +90,7 @@ export async function startBot() {
     const guild = client.guilds.cache.get(guildId) || (await client.guilds.fetch(guildId).catch(() => null));
     if (guild) {
       await guild.leave();
-      console.log(`[bot] Saiu do servidor ${guild.name} (sem permissão para criar canal)`);
+      logger.info(`[bot] Saiu do servidor ${guild.name} (sem permissão para criar canal)`);
     }
   };
 
@@ -117,24 +118,24 @@ export async function startBot() {
       await client.application.commands.set(commands);
       // Comandos da versão antiga (registrados só num servidor) duplicariam os globais
       if (legacyGuildId) await client.application.commands.set([], legacyGuildId).catch(() => {});
-      console.log('[bot] Comandos /live e /convite registrados.');
+      logger.info('[bot] Comandos /live e /convite registrados.');
     } catch (err) {
-      console.error('[bot] Falha ao registrar comandos:', err.message);
+      logger.error('[bot] Falha ao registrar comandos:', err.message);
     }
   }
 
   client.once(Events.ClientReady, async (c) => {
-    console.log(`[bot] Conectado como ${c.user.tag}`);
+    logger.info(`[bot] Conectado como ${c.user.tag}`);
     await registerCommands();
     for (const guild of c.guilds.cache.values()) {
       if (getChannelByGuild(guild.id)) updateGuildInfo(guild.id, { name: guild.name, icon: iconUrl(guild) });
-      else console.log(`[bot] Servidor ${guild.name} (${guild.id}) não tem canal do Faz o L`);
+      else logger.info(`[bot] Servidor ${guild.name} (${guild.id}) não tem canal do Faz o L`);
     }
     updatePresence().catch(() => {});
   });
 
   client.on(Events.GuildCreate, (guild) => {
-    console.log(`[bot] Entrou no servidor ${guild.name}`);
+    logger.info(`[bot] Entrou no servidor ${guild.name}`);
     if (getChannelByGuild(guild.id)) return updateGuildInfo(guild.id, { name: guild.name, icon: iconUrl(guild) });
     // O canal é criado no retorno do "Criar canal" do site; se não vier, não era pra estar aqui
     setTimeout(() => {
@@ -166,7 +167,7 @@ export async function startBot() {
         });
       }
     } catch (err) {
-      console.error(`[bot] /${interaction.commandName}:`, err.message);
+      logger.error(`[bot] /${interaction.commandName}:`, err.message);
     }
   });
 
@@ -178,7 +179,7 @@ export async function startBot() {
       const channel = await client.channels.fetch(id);
       return channel?.isTextBased() ? channel : null;
     } catch (err) {
-      console.error('[bot] Canal de texto inválido:', id, err.message);
+      logger.error('[bot] Canal de texto inválido:', id, err.message);
       return null;
     }
   }
@@ -216,7 +217,7 @@ export async function startBot() {
       const msg = await target.send({ embeds: [embed], components: [watchButton(channel)] });
       notifications.set(`${channel.id}|${identity}`, msg);
     } catch (err) {
-      console.error('[bot] Falha ao enviar aviso:', err.message);
+      logger.error('[bot] Falha ao enviar aviso:', err.message);
     }
   });
 
@@ -246,7 +247,7 @@ export async function startBot() {
     try {
       eventMessages.set(channel.id, await target.send({ embeds: [embed], components: [watchButton(channel)] }));
     } catch (err) {
-      console.error('[bot] Falha ao avisar evento:', err.message);
+      logger.error('[bot] Falha ao avisar evento:', err.message);
     }
   });
   liveEvents.on('event:end', ({ channel, event }) => {
@@ -292,7 +293,7 @@ export async function startBot() {
       const msg = await target.send(await clipMessage(channel, clip));
       sql('UPDATE clips SET discord_message = ? WHERE id = ?').run(`${target.id}:${msg.id}`, clip.id);
     } catch (err) {
-      console.error('[bot] Falha ao postar clipe:', err.message);
+      logger.error('[bot] Falha ao postar clipe:', err.message);
     }
   });
 
@@ -306,7 +307,7 @@ export async function startBot() {
       if (!msg) return;
       await msg.edit({ ...(await clipMessage(channel, clip, Date.now().toString(36))), allowedMentions: { parse: [] } });
     } catch (err) {
-      console.error('[bot] Falha ao atualizar post do clipe:', err.message);
+      logger.error('[bot] Falha ao atualizar post do clipe:', err.message);
     }
   });
 

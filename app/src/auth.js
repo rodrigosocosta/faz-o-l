@@ -1,3 +1,4 @@
+import { logger } from './logger.js';
 import crypto from 'node:crypto';
 import express from 'express';
 import { config } from './config.js';
@@ -181,7 +182,7 @@ export function authRouter() {
       }
       res.redirect(safeNext(saved.next));
     } catch (err) {
-      console.error('[auth] Falha no login do Discord:', err.message);
+      logger.error('[auth] Falha no login do Discord:', err.message);
       res.redirect('/?erro=login');
     }
   });

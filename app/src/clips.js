@@ -1,3 +1,5 @@
+import { tracedFetch } from './telemetry.js';
+import { logger } from './logger.js';
 // Clipes: os últimos 30 s / 1 min / 2 min de uma live, gerados pelo serviço "recorder".
 //
 // O recorder fica gravando cada live em pedaços de ~4 s (sem recodificar) e, quando
@@ -126,7 +128,7 @@ async function removeClip(clip) {
 async function cleanup() {
   const expired = sql('SELECT * FROM clips WHERE saved = 0 AND created_at < ?').all(Date.now() - UNSAVED_TTL_MS);
   for (const clip of expired) await removeClip(clip);
-  if (expired.length) console.log(`[clips] ${expired.length} clipe(s) não salvo(s) apagado(s) (mais de 24 h)`);
+  if (expired.length) logger.info(`[clips] ${expired.length} clipe(s) não salvo(s) apagado(s) (mais de 24 h)`);
 }
 
 /** Posta no Discord uma vez só (quando quem clipou confirma o título, ou depois de 3 min). */
@@ -174,7 +176,7 @@ const VISIBLE = 'c.channel_id IN (SELECT channel_id FROM members WHERE user_id =
 export async function clipsRouter() {
   await fs.mkdir(CLIPS_DIR, { recursive: true });
   await cleanup();
-  setInterval(() => cleanup().catch((e) => console.error('[clips] limpeza:', e.message)), 10 * 60 * 1000).unref();
+  setInterval(() => cleanup().catch((e) => logger.error('[clips] limpeza:', e.message)), 10 * 60 * 1000).unref();
   // Clipes que ficaram sem confirmar o título (aba fechada etc.)
   setInterval(() => {
     for (const { id } of sql('SELECT id FROM clips WHERE published = 0 AND created_at < ?').all(Date.now() - PUBLISH_FALLBACK_MS)) publish(id);
@@ -182,7 +184,7 @@ export async function clipsRouter() {
 
   // Live começou: o gravador entra na sala na hora (sem esperar a varredura dele)
   liveEvents.on('stream:start', ({ channel }) => {
-    fetch(`${RECORDER_URL}/join?room=${encodeURIComponent(roomName(channel))}`, { method: 'POST', signal: AbortSignal.timeout(3000) })
+    tracedFetch(`${RECORDER_URL}/join?room=${encodeURIComponent(roomName(channel))}`, { method: 'POST', signal: AbortSignal.timeout(3000) })
       .catch(() => {});
   });
 
@@ -221,7 +223,7 @@ export async function clipsRouter() {
     const id = crypto.randomBytes(9).toString('base64url');
     let made;
     try {
-      const r = await fetch(`${RECORDER_URL}/clip`, {
+      const r = await tracedFetch(`${RECORDER_URL}/clip`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ room: roomName(req.channel), identity, seconds, id }),
@@ -233,7 +235,7 @@ export async function clipsRouter() {
       }
       if (!r.ok) throw new Error(made.error || `recorder respondeu ${r.status}`);
     } catch (err) {
-      console.error('[clips] falha ao clipar:', err.message);
+      logger.error('[clips] falha ao clipar:', err.message);
       return res.status(502).json({ error: 'Não consegui gerar o clipe. Tente de novo em alguns segundos.' });
     }
 

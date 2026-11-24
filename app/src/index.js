@@ -1,3 +1,5 @@
+import { httpTelemetry } from './telemetry.js';
+import { logger } from './logger.js';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +22,7 @@ migrateLegacy();
 const app = express();
 app.set('trust proxy', true);
 app.disable('x-powered-by');
+app.use(httpTelemetry);
 
 app.get('/healthz', (_req, res) => res.send('ok'));
 
@@ -62,8 +65,8 @@ app.get(['/c/:id', '/u/:username', '/convite/:code'], (_req, res) => {
   res.sendFile(path.join(publicDir, 'index.html'));
 });
 
-app.listen(config.port, () => {
-  console.log(`[app] Faz o L rodando em ${config.publicUrl} (porta ${config.port}, login: ${config.authMode})`);
+export const server = app.listen(config.port, () => {
+  logger.info(`[app] Faz o L rodando em ${config.publicUrl} (porta ${config.port}, login: ${config.authMode})`);
 });
 
-startBot().catch((err) => console.error('[bot] Não foi possível iniciar o bot:', err.message));
+startBot().catch((err) => logger.error('[bot] Não foi possível iniciar o bot:', err.message));

@@ -1,3 +1,4 @@
+import { logger } from './logger.js';
 // Canais de transmissão: um por servidor do Discord.
 //
 // - Só quem está liberado (CREATOR_DISCORD_IDS) pode colocar o bot num servidor,
@@ -61,7 +62,7 @@ export function createChannel({ guildId, name, icon, ownerId, notifyChannelId = 
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(id, guildId ?? null, name, icon || '', ownerId, notifyChannelId, clipsChannelId, Date.now());
     sql('INSERT INTO members (channel_id, user_id, role, joined_at) VALUES (?, ?, \'owner\', ?)').run(id, ownerId, Date.now());
   });
-  console.log(`[canais] Canal "${name}" criado (${id}), dono ${ownerId}`);
+  logger.info(`[canais] Canal "${name}" criado (${id}), dono ${ownerId}`);
   return getChannel(id);
 }
 
@@ -119,7 +120,7 @@ export function migrateLegacy() {
   const { guildId, creatorIds, notifyChannelId, clipsChannelId } = config.discord;
   if (config.authMode !== 'discord' || !guildId || getChannelByGuild(guildId)) return;
   if (!creatorIds.length) {
-    console.warn('[canais] Defina CREATOR_DISCORD_IDS no .env para migrar o canal antigo.');
+    logger.warn('[canais] Defina CREATOR_DISCORD_IDS no .env para migrar o canal antigo.');
     return;
   }
   const channel = createChannel({
@@ -148,7 +149,7 @@ export function migrateLegacy() {
     }
   });
   if (old.length) fs.renameSync(legacyFile, `${legacyFile}.migrado`);
-  console.log(`[canais] Canal antigo migrado (${old.length} clipe(s)).`);
+  logger.info(`[canais] Canal antigo migrado (${old.length} clipe(s)).`);
 }
 
 // ---------------- convites ----------------
