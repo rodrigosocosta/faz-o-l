@@ -38,6 +38,35 @@ ssh -L 8080:127.0.0.1:8080 usuario@sua-vps
 
 Depois abra o mesmo endereço local. Nenhuma porta de ingestão é publicada no host e o painel não recebe uma rota automática no Caddy/Traefik.
 
+## Publicar por HTTPS no Coolify/Traefik
+
+O overlay `compose.traefik.yml` publica somente o painel na rede do proxy. Os bancos e o collector não entram nessa rede. Na raiz do projeto, configure no `.env`:
+
+```dotenv
+SIGNOZ_DOMAIN=signoz.seudominio.com
+SIGNOZ_PORT=8081
+TRAEFIK_NETWORK=coolify
+```
+
+Crie o registro DNS do subdomínio para o IP da VPS. A porta local 8081 evita o conflito com o painel do Traefik na 8080; ela continua vinculada somente ao loopback.
+
+Primeiro inicie `sh observability/stack.sh up`, ainda sem a opção de publicação. Crie a conta do administrador acessando a interface por um túnel SSH:
+
+```bash
+ssh -L 18081:127.0.0.1:8081 usuario@sua-vps
+```
+
+Abra `http://127.0.0.1:18081` no computador e conclua o cadastro. Depois publique o painel pela VPS:
+
+```bash
+sh observability/stack.sh --traefik config --quiet
+sh observability/stack.sh --traefik up
+```
+
+O Traefik emite o certificado para `SIGNOZ_DOMAIN`. Se o proxy usar nomes diferentes, configure `TRAEFIK_ENTRYPOINT_HTTP`, `TRAEFIK_ENTRYPOINT_HTTPS` e `TRAEFIK_CERTRESOLVER` como no overlay do Faz o L. Os padrões são `http`, `https` e `letsencrypt`.
+
+Para operar a publicação use também a opção `--traefik` nos comandos de status, logs, render e parada. Usar `up` sem essa opção depois remove a publicação pelo proxy, mantendo o acesso local. O `COMPOSE_FILE` do app inclui apenas `docker-compose.observability.yml`; o overlay HTTPS do SigNoz é aplicado pelo seu próprio script e não entra no Compose do app.
+
 ## O que observar
 
 | Serviço | Dados |

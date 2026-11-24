@@ -53,7 +53,7 @@ services:
     networks:
     - fazol-signoz-network
     ports:
-    - 127.0.0.1:8080:8080
+    - 127.0.0.1:${SIGNOZ_PORT:-8080}:8080
     restart: unless-stopped
   fazol-signoz-telemetrykeeper-clickhousekeeper-0:
     container_name: fazol-signoz-telemetrykeeper-clickhousekeeper-0

@@ -3,13 +3,22 @@
 set -eu
 OBS_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIR=$(dirname -- "$OBS_DIR")
+OBS_TRAEFIK=false
+if [ "${1:-}" = "--traefik" ]; then
+  OBS_TRAEFIK=true
+  shift
+fi
 cd "$OBS_DIR"
 compose() {
-  if [ -f "$PROJECT_DIR/.env" ]; then
-    docker compose --env-file "$PROJECT_DIR/.env" -f "$OBS_DIR/pours/deployment/compose.yaml" "$@"
+  if [ "$OBS_TRAEFIK" = true ]; then
+    set -- -f "$OBS_DIR/pours/deployment/compose.yaml" -f "$OBS_DIR/compose.traefik.yml" "$@"
   else
-    docker compose -f "$OBS_DIR/pours/deployment/compose.yaml" "$@"
+    set -- -f "$OBS_DIR/pours/deployment/compose.yaml" "$@"
   fi
+  if [ -f "$PROJECT_DIR/.env" ]; then
+    set -- --env-file "$PROJECT_DIR/.env" "$@"
+  fi
+  docker compose "$@"
 }
 case "${1:-status}" in
   render)
@@ -23,7 +32,7 @@ case "${1:-status}" in
   up) compose up -d --wait --wait-timeout 600 ;;
   down) compose down ;;
   status) compose ps -a ;;
-  config) compose config ;;
+  config) shift; compose config "$@" ;;
   logs) compose logs --tail 100 -f ;;
-  *) echo "Uso: sh observability/stack.sh render|up|down|status|logs|config" >&2; exit 2 ;;
+  *) echo "Uso: sh observability/stack.sh [--traefik] render|up|down|status|logs|config" >&2; exit 2 ;;
 esac

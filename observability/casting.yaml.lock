@@ -414,7 +414,7 @@ spec:
     - op: replace
       path: /services/fazol-signoz-signoz-0/ports
       value:
-      - 127.0.0.1:8080:8080
+      - 127.0.0.1:${SIGNOZ_PORT:-8080}:8080
     - op: remove
       path: /services/ingester/ports
     - op: replace
