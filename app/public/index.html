@@ -3,310 +3,529 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark light" />
   <title>Faz o L</title>
   <meta name="description" content="Transmita sua tela para a galera do Discord com quase zero de delay." />
-  <meta name="theme-color" content="#0d0e0b" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='20' fill='%23e3f26a'/><path d='M22 14h8v28h14v8H22z' fill='%23141505'/></svg>" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" />
+  <meta name="theme-color" content="#16191e" />
+  <link rel="icon" href="/img/logo-faz-o-l.svg" type="image/svg+xml" />
+  <script>
+    // Tema e barra lateral antes de pintar a página (evita piscar o tema errado)
+    try {
+      if (localStorage.getItem('theme') === 'light') document.documentElement.dataset.theme = 'light';
+    } catch { /* sem storage */ }
+  </script>
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
-  <!-- Tela de login -->
-  <section id="view-login" class="view center" hidden>
-    <div class="card hero">
-      <div class="logo big"><span>L</span></div>
+  <a class="skip" href="#workspace">Pular para o conteúdo</a>
+
+  <!-- Login (fora da casca) -->
+  <main id="view-login" class="login-screen" hidden>
+    <section class="lobby">
+      <img class="lobby-logo" src="/img/logo-faz-o-l.svg" width="56" height="56" alt="" />
       <h1>Faz o L</h1>
       <p class="muted" id="login-sub">Transmita sua tela pra galera com quase zero de delay.</p>
       <p id="login-error" class="error" hidden></p>
-
-      <a id="btn-discord" class="btn btn-discord" href="/auth/login" hidden>
-        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.6 1.3a18.3 18.3 0 0 0-5.5 0L8.6 3a19.7 19.7 0 0 0-4.9 1.5C.6 9.1-.3 13.6.1 18.1a19.9 19.9 0 0 0 6 3l1.3-2a12.9 12.9 0 0 1-2-1l.5-.4a14.2 14.2 0 0 0 12.2 0l.5.4-2 1 1.3 2a19.8 19.8 0 0 0 6-3c.5-5.2-.9-9.7-3.6-13.7ZM8 15.4c-1.2 0-2.2-1.1-2.2-2.4S6.8 10.6 8 10.6s2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm8 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z"/></svg>
-        Entrar com Discord
+      <a id="btn-discord" class="button primary" href="/auth/login" hidden>
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" stroke="none" d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.6 1.3a18.3 18.3 0 0 0-5.5 0L8.6 3a19.7 19.7 0 0 0-4.9 1.5C.6 9.1-.3 13.6.1 18.1a19.9 19.9 0 0 0 6 3l1.3-2a12.9 12.9 0 0 1-2-1l.5-.4a14.2 14.2 0 0 0 12.2 0l.5.4-2 1 1.3 2a19.8 19.8 0 0 0 6-3c.5-5.2-.9-9.7-3.6-13.7ZM8 15.4c-1.2 0-2.2-1.1-2.2-2.4S6.8 10.6 8 10.6s2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm8 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z"/></svg>
+        Continuar com Discord
       </a>
-
       <form id="form-guest" class="stack" hidden>
-        <input id="guest-name" maxlength="32" placeholder="Seu apelido" autocomplete="nickname" required />
-        <button class="btn btn-primary" type="submit">Continuar</button>
+        <label class="field">Seu apelido
+          <input id="guest-name" maxlength="32" placeholder="Como a galera te chama" autocomplete="nickname" required />
+        </label>
+        <button class="button primary" type="submit">Continuar</button>
       </form>
-    </div>
-  </section>
+    </section>
+  </main>
 
-  <!-- Meus canais -->
-  <section id="view-home" class="view center" hidden>
-    <div class="card hero wide">
-      <div class="logo big"><span>L</span></div>
-      <h1>Faz o L</h1>
-      <a class="me-chip link" id="home-me" href="#"><img id="home-avatar" alt="" hidden /><span id="home-name"></span></a>
-      <p id="home-error" class="error" hidden></p>
-      <h3 class="section-title">Seus canais</h3>
-      <ul id="channel-list" class="channel-list"></ul>
-      <p id="no-channels" class="muted" hidden>Você ainda não está em nenhum canal. Peça um <b>link de convite</b> pra quem colocou o Faz o L no servidor do Discord.</p>
-      <a id="btn-create" class="btn btn-discord" href="/auth/install" hidden>＋ Criar canal num servidor do Discord</a>
-      <button id="btn-logout-home" class="btn btn-ghost btn-sm">Sair da conta</button>
-    </div>
-  </section>
-
-  <!-- Convite -->
-  <section id="view-invite" class="view center" hidden>
-    <div class="card hero">
-      <img id="invite-icon" class="guild-icon big" alt="" hidden />
-      <p class="muted">Você foi convidado para o canal</p>
-      <h1 id="invite-name"></h1>
-      <p id="invite-error" class="error" hidden></p>
-      <button id="btn-accept" class="btn btn-primary btn-lg">Entrar no canal</button>
-      <a class="btn btn-ghost btn-sm" href="/" data-link>Voltar</a>
-    </div>
-  </section>
-
-  <!-- Tela antes de entrar na sala (o clique libera o som) -->
-  <section id="view-join" class="view center" hidden>
-    <div class="card hero">
-      <img id="join-icon" class="guild-icon big" alt="" hidden />
-      <div id="join-logo" class="logo big"><span>L</span></div>
-      <h1 id="join-channel">Faz o L</h1>
-      <div class="me-chip"><img id="join-avatar" alt="" hidden /><span id="join-name"></span></div>
-      <div id="join-status" class="join-status muted">Carregando…</div>
-      <button id="btn-join" class="btn btn-primary btn-lg">Entrar na sala</button>
-      <a class="btn btn-ghost btn-sm" href="/" data-link>Meus canais</a>
-    </div>
-  </section>
-
-  <!-- Perfil -->
-  <section id="view-profile" class="view page" hidden>
-    <header class="topbar">
-      <a class="btn btn-ghost btn-sm" id="profile-back" href="/" data-link>← Voltar</a>
-      <div class="brand"><div class="logo"><span>L</span></div><strong>Faz o L</strong></div>
-    </header>
-    <div class="page-body">
-      <div class="profile-head">
-        <img id="profile-avatar" class="profile-avatar" alt="" />
-        <div>
-          <h1 id="profile-name"></h1>
-          <div id="profile-username" class="muted"></div>
-          <div id="profile-channels" class="hint"></div>
-        </div>
-      </div>
-      <div class="tabs">
-        <button class="tab active" data-tab="streamed">Clipes das lives <span id="count-streamed" class="muted"></span></button>
-        <button class="tab" data-tab="tagged">Marcado em <span id="count-tagged" class="muted"></span></button>
-      </div>
-      <ul id="profile-clips" class="clips grid"></ul>
-    </div>
-  </section>
-
-  <!-- Sala -->
-  <section id="view-room" class="view room" hidden>
-    <div class="shell" id="shell">
-      <div id="stage" class="stage count-0">
-        <div id="empty" class="empty">
-          <div class="empty-orb"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.5"/><path d="M7.8 16.2a6 6 0 0 1 0-8.4M16.2 7.8a6 6 0 0 1 0 8.4M4.9 19.1a10 10 0 0 1 0-14.2M19.1 4.9a10 10 0 0 1 0 14.2"/></svg></div>
-          <h2>Ninguém ao vivo ainda</h2>
-          <p class="muted">Abra <b>Transmitir</b> e chame a galera.</p>
-          <button type="button" class="btn btn-primary" data-open-panel="stream">Transmitir minha tela</button>
-        </div>
-      </div>
-
-      <!-- topo flutuante -->
-      <header class="hud-top">
-        <button id="btn-leave" class="icon-btn glass" title="Sair da sala" aria-label="Sair da sala">
-          <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+  <!-- Casca: barra lateral + área de conteúdo -->
+  <div id="app" class="shell" hidden>
+    <aside class="sidebar">
+      <div class="side-header">
+        <a class="brand" href="/" data-link aria-label="Faz o L, meus canais">
+          <img src="/img/logo-faz-o-l.svg" width="37" height="37" alt="" /><span>Faz o L</span>
+        </a>
+        <button type="button" class="icon-btn ghost sidebar-toggle" id="sidebar-toggle" aria-controls="sidebar-links">
+          <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-sidebar-collapse"></use></svg>
         </button>
-        <div class="hud-center">
-          <div class="pill glass brand-pill">
-            <img id="room-icon" class="guild-icon" alt="" hidden />
-            <div id="room-logo" class="logo"><span>L</span></div>
-            <strong id="room-name">Faz o L</strong>
-          </div>
-          <span class="pill glass" id="pill-live"><i class="dot"></i><span id="live-count">0/2 ao vivo</span></span>
-          <span class="pill glass" id="pill-viewers" title="Assistindo"><svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><span id="viewer-count">0/15</span></span>
+      </div>
+      <nav id="sidebar-links" class="side-nav" aria-label="Navegação principal">
+        <a class="nav-item" id="nav-home" href="/" data-link title="Meus canais" aria-label="Meus canais">
+          <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-channels"></use></svg><span class="nav-text">Meus canais</span>
+        </a>
+        <div class="side-label" id="nav-channel-label">Canal atual</div>
+        <a class="nav-item" id="nav-room" href="/" data-link title="Sala ao vivo" aria-label="Sala ao vivo">
+          <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-room"></use></svg><span class="nav-text">Sala ao vivo</span>
+          <i class="nav-live" id="nav-live" hidden></i>
+        </a>
+        <a class="nav-item" id="nav-clips" href="/" data-link title="Clipes" aria-label="Clipes">
+          <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-clips"></use></svg><span class="nav-text">Clipes</span>
+          <span class="nav-count" id="clips-count"></span>
+        </a>
+      </nav>
+      <div class="side-footer">
+        <button type="button" class="nav-item" id="btn-settings" title="Configurações" aria-label="Configurações">
+          <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-settings"></use></svg><span class="nav-text">Configurações</span>
+        </button>
+        <a class="nav-item profile-button" id="btn-profile" href="/" data-link title="Meu perfil" aria-label="Meu perfil">
+          <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-profile"></use></svg>
+          <span class="avatar" id="side-avatar" aria-hidden="true"></span>
+          <span class="nav-text"><span id="side-name"></span><small>Meu perfil</small></span>
+        </a>
+      </div>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <div class="channel-title" id="topbar-title"></div>
+        <div class="top-right">
+          <button type="button" class="button ghost" id="btn-event" hidden>
+            <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-bell"></use></svg><span>Começar evento</span>
+          </button>
+          <button type="button" class="button primary" id="btn-broadcast" hidden>
+            <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-broadcast"></use></svg><span>Transmitir</span>
+          </button>
+          <button type="button" class="button danger" id="btn-stop-live" hidden>
+            <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-stop"></use></svg><span id="btn-stop-live-text">Encerrar live</span>
+          </button>
+          <a class="icon-btn ghost mobile-only" id="btn-profile-mobile" href="/" data-link title="Meu perfil" aria-label="Meu perfil">
+            <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-profile"></use></svg>
+          </a>
         </div>
-        <a id="btn-profile" class="icon-btn glass avatar-btn" title="Meu perfil" href="#"><img id="hud-avatar" alt="" hidden /><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></a>
       </header>
 
-      <!-- barra lateral de ícones -->
-      <nav class="rail glass" aria-label="Ferramentas">
-        <button class="rail-btn" data-panel="stream" title="Transmitir"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.5"/><path d="M7.8 16.2a6 6 0 0 1 0-8.4M16.2 7.8a6 6 0 0 1 0 8.4"/></svg></button>
-        <button class="rail-btn" id="rail-clips" title="Clipes"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.1 15.9M14.5 14.5L20 20M8.1 8.1L12 12"/></svg><span id="clips-count" class="rail-badge"></span></button>
-        <button class="rail-btn" data-panel="people" title="Na sala"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.2a6.5 6.5 0 0 1 3.5 5.8"/></svg><span id="people-count" class="rail-badge"></span></button>
-        <button class="rail-btn" id="btn-settings" title="Configurações"><svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></button>
-        <button id="btn-manage" class="rail-btn" title="Canal: convites e membros" hidden><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
-      </nav>
-
-      <aside id="sidebar" class="drawer glass" hidden>
-        <div class="drawer-head">
-          <h3 id="drawer-title">Transmitir</h3>
-          <button id="drawer-close" class="icon-btn sm" aria-label="Fechar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
-        </div>
-        <div class="panel" data-panel="stream">
-          <label class="field">Qualidade
-            <select id="opt-quality">
-              <option value="1080p60">1080p • 60 fps</option>
-              <option value="1080p30" selected>1080p • 30 fps (recomendado)</option>
-              <option value="720p60">720p • 60 fps</option>
-              <option value="720p30">720p • 30 fps (internet fraca)</option>
-            </select>
-          </label>
-          <label class="field">Conteúdo
-            <select id="opt-content">
-              <option value="motion">Jogo / vídeo (prioriza fluidez)</option>
-              <option value="detail">Texto / código (prioriza nitidez)</option>
-            </select>
-          </label>
-          <div id="desktop-opts" class="stack" hidden>
-            <label class="field">O que transmitir
-              <span class="row nowrap">
-                <select id="opt-monitor"></select>
-                <button type="button" id="btn-refresh-sources" class="btn btn-ghost btn-sm" title="Atualizar a lista de janelas">↻</button>
-              </span>
-            </label>
-            <label class="check"><input type="checkbox" id="opt-stretch" /> Esticar 4:3 pra 16:9 (CS esticado)</label>
-            <label class="field">Som
-              <select id="opt-audio-mode">
-                <option value="system">Do PC todo (menos o Faz o L)</option>
-                <option value="game">Só da janela escolhida (sem Discord/música)</option>
-              </select>
-            </label>
-            <label class="field">Codec
-              <select id="opt-codec">
-                <option value="vp8">VP8 (processador, fluido)</option>
-                <option value="vp9">VP9 (mais nítido, um pouco mais de CPU)</option>
-                <option value="h264">H.264 (pesado: trava em 1080p60)</option>
-                <option value="av1">AV1 (experimental, muito pesado)</option>
-              </select>
-            </label>
-            <label class="check"><input type="checkbox" id="opt-preview" checked /> Ver minha transmissão (só vídeo, gasta internet)</label>
+      <main class="main" id="workspace" tabindex="-1">
+        <!-- Meus canais -->
+        <section id="view-home" class="view content-page" hidden>
+          <div class="intro">
+            <div>
+              <h1>Meus canais</h1>
+              <p class="muted">Salas vinculadas aos seus servidores do Discord.</p>
+            </div>
+            <a id="btn-create" class="button primary" href="/auth/install" hidden>
+              <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-plus"></use></svg>Criar canal
+            </a>
           </div>
-          <label class="check"><input type="checkbox" id="opt-audio" checked /> Transmitir som</label>
-          <p class="hint" id="browser-audio-hint">No Windows, marque <b>“Compartilhar áudio do sistema”</b> ao escolher a tela. Em aba do Chrome, marque <b>“Compartilhar áudio da guia”</b>.</p>
-          <button id="btn-stream" class="btn btn-live btn-block">Transmitir minha tela</button>
-          <button id="btn-event" class="btn btn-block">🎬 Começar evento</button>
-          <p id="slots" class="hint center-text"></p>
-        </div>
+          <p id="home-error" class="error" hidden></p>
+          <ul id="channel-list" class="channel-list"></ul>
+          <div id="no-channels" class="blank" hidden>
+            <div>
+              <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-channels"></use></svg>
+              <h2>Nenhum canal ainda</h2>
+              <p>Peça um <b>link de convite</b> pra quem colocou o Faz o L no servidor do Discord.</p>
+            </div>
+          </div>
+          <div class="button-row page-foot">
+            <button type="button" id="btn-logout-home" class="button ghost">
+              <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-logout"></use></svg>Sair da conta
+            </button>
+          </div>
+        </section>
 
-        <div class="panel" data-panel="people">
-          <ul id="people" class="people"></ul>
-        </div>
-      </aside>
+        <!-- Convite -->
+        <section id="view-invite" class="view" hidden>
+          <div class="lobby">
+            <span class="channel-mark large" id="invite-mark" aria-hidden="true"></span>
+            <p class="overline">Você recebeu um convite</p>
+            <h1 id="invite-name"></h1>
+            <p id="invite-error" class="error" hidden></p>
+            <div class="button-row">
+              <button type="button" id="btn-accept" class="button primary">
+                <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-check"></use></svg>Aceitar convite
+              </button>
+              <a class="button ghost" href="/" data-link>Meus canais</a>
+            </div>
+          </div>
+        </section>
+
+        <!-- Entrada na sala (o clique libera o som) -->
+        <section id="view-join" class="view" hidden>
+          <div class="lobby">
+            <span class="channel-mark large" id="join-mark" aria-hidden="true"></span>
+            <h1 id="join-channel">Faz o L</h1>
+            <p id="join-status" class="muted">Carregando…</p>
+            <div class="button-row">
+              <button type="button" id="btn-join" class="button primary">
+                <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-room"></use></svg><span>Entrar na sala</span>
+              </button>
+              <a class="button ghost" href="/" data-link>Meus canais</a>
+            </div>
+          </div>
+        </section>
+
+        <!-- Sala -->
+        <section id="view-room" class="view" hidden>
+          <div class="intro">
+            <div>
+              <h1>Sala ao vivo</h1>
+              <div class="meta">
+                <span id="pill-live"><i class="dot"></i><span id="live-count">0/2 ao vivo</span></span>
+                <span><svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-eye"></use></svg><span id="viewer-count">0/15 espectadores</span></span>
+                <button type="button" class="link-btn" id="btn-leave">Sair da sala</button>
+              </div>
+            </div>
+            <div class="segment room-layouts" id="layout-switch" role="group" aria-label="Layout das transmissões" hidden>
+              <button type="button" data-layout="theater"><svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-theater"></use></svg> Teatro</button>
+              <button type="button" data-layout="focus"><svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-focus"></use></svg> Em destaque</button>
+              <button type="button" data-layout="split"><svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-split"></use></svg> Lado a lado</button>
+            </div>
+          </div>
+          <div id="room-notice" class="notice" hidden></div>
+          <div id="stage" class="stage count-0">
+            <div id="empty" class="blank">
+              <div>
+                <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-broadcast"></use></svg>
+                <h2>Ninguém ao vivo ainda</h2>
+                <p>Comece a transmitir sua tela para a galera.</p>
+                <button type="button" class="button primary" data-open-broadcast>
+                  <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-broadcast"></use></svg>Transmitir
+                </button>
+              </div>
+            </div>
+            <aside class="people" id="people-panel">
+              <div class="section-head">
+                <h2><svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-users"></use></svg> Na sala</h2>
+                <span class="small" id="people-count"></span>
+              </div>
+              <ul id="people" class="people-list"></ul>
+            </aside>
+          </div>
+          <section class="clip-shelf" id="clip-shelf" aria-label="Clipes recentes" hidden>
+            <div class="section-head">
+              <h2>Clipes recentes</h2>
+              <a class="button ghost" id="shelf-all" href="/" data-link>Ver todos</a>
+            </div>
+            <div class="clip-grid" id="shelf-grid"></div>
+          </section>
+        </section>
+
+        <!-- Clipes do canal -->
+        <section id="view-clips" class="view content-page" hidden>
+          <div id="clips-list-view">
+            <div class="page-head">
+              <h1>Clipes</h1>
+              <p class="muted" id="clips-channel"></p>
+            </div>
+            <div class="segment" id="clips-filter" role="group" aria-label="Filtrar clipes">
+              <button type="button" data-filter="all">Todos</button>
+              <button type="button" data-filter="mine">Meus</button>
+              <button type="button" data-filter="saved">Salvos</button>
+            </div>
+            <div class="clip-grid" id="clips-grid"></div>
+            <div class="blank" id="clips-empty" hidden>
+              <div>
+                <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-clips"></use></svg>
+                <h2>Nenhum clipe aqui</h2>
+                <p id="clips-empty-text">Clipe um momento de uma live e ele aparece aqui.</p>
+              </div>
+            </div>
+          </div>
+          <article id="clip-detail" class="clip-detail stack" hidden>
+            <a class="button ghost back-btn" id="clip-back" href="/" data-link>
+              <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-back"></use></svg>Clipes
+            </a>
+            <video id="clip-player" class="clip-cover" controls playsinline></video>
+            <div>
+              <h1 id="clip-detail-title"></h1>
+              <p class="muted" id="clip-detail-meta"></p>
+            </div>
+            <p id="clip-detail-desc" class="clip-desc" hidden></p>
+            <div id="clip-detail-tags" class="button-row wrap" hidden></div>
+            <div id="clip-detail-actions" class="button-row wrap"></div>
+            <small id="clip-detail-expiry"></small>
+          </article>
+        </section>
+
+        <!-- Perfil -->
+        <section id="view-profile" class="view content-page" hidden>
+          <div class="intro">
+            <div class="identity">
+              <span class="avatar large-avatar" id="profile-avatar" aria-hidden="true"></span>
+              <div>
+                <h1 id="profile-name"></h1>
+                <p class="muted" id="profile-username"></p>
+              </div>
+            </div>
+            <button type="button" class="button ghost" id="btn-logout-profile" hidden>
+              <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-logout"></use></svg>Sair da conta
+            </button>
+          </div>
+          <p class="small" id="profile-channels"></p>
+          <div class="segment profile-tabs" id="profile-tabs" role="group" aria-label="Clipes do perfil">
+            <button type="button" data-tab="streamed">Clipes das lives <span id="count-streamed"></span></button>
+            <button type="button" data-tab="tagged">Marcado em <span id="count-tagged"></span></button>
+          </div>
+          <div class="clip-grid" id="profile-clips"></div>
+          <div class="blank" id="profile-empty" hidden>
+            <div>
+              <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-clips"></use></svg>
+              <h2>Nenhum clipe</h2>
+              <p id="profile-empty-text"></p>
+            </div>
+          </div>
+        </section>
+      </main>
     </div>
-  </section>
+  </div>
+
+  <!-- Transmitir -->
+  <dialog id="dlg-broadcast" aria-labelledby="broadcast-title">
+    <header class="dialog-head">
+      <h2 id="broadcast-title">Transmitir tela</h2>
+      <button type="button" class="icon-btn ghost" data-close title="Fechar janela" aria-label="Fechar janela"><svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-close"></use></svg></button>
+    </header>
+    <form id="form-broadcast" class="dialog-body stack">
+      <div class="notice" id="broadcast-full" hidden>
+        <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-info"></use></svg>
+        <span id="broadcast-full-text"></span>
+      </div>
+      <div class="source-badge" id="broadcast-source"></div>
+      <div class="form-grid">
+        <label class="field">Qualidade desta live
+          <select id="opt-quality">
+            <option value="1080p60">1080p · 60 fps</option>
+            <option value="1080p30" selected>1080p · 30 fps (recomendado)</option>
+            <option value="720p60">720p · 60 fps</option>
+            <option value="720p30">720p · 30 fps (internet fraca)</option>
+          </select>
+        </label>
+        <label class="field">Tipo de conteúdo
+          <select id="opt-content">
+            <option value="motion">Jogo ou vídeo (fluidez)</option>
+            <option value="detail">Texto ou código (nitidez)</option>
+          </select>
+        </label>
+      </div>
+      <div id="desktop-opts" class="stack" hidden>
+        <label class="field">O que transmitir
+          <span class="input-row">
+            <select id="opt-monitor"></select>
+            <button type="button" id="btn-refresh-sources" class="icon-btn" title="Atualizar a lista de janelas" aria-label="Atualizar a lista de janelas">
+              <svg class="icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8m0-4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16m0 4v-4h-4"/></svg>
+            </button>
+          </span>
+        </label>
+        <label class="checkline"><input type="checkbox" id="opt-stretch" /> Esticar 4:3 pra 16:9 (CS esticado)</label>
+        <div class="form-grid">
+          <label class="field">Som
+            <select id="opt-audio-mode">
+              <option value="system">Do PC todo (menos o Faz o L)</option>
+              <option value="game">Só da janela escolhida</option>
+            </select>
+          </label>
+          <label class="field">Codec
+            <select id="opt-codec">
+              <option value="vp8">VP8 (processador, fluido)</option>
+              <option value="vp9">VP9 (mais nítido, mais CPU)</option>
+              <option value="h264">H.264 (pesado em 1080p60)</option>
+              <option value="av1">AV1 (experimental)</option>
+            </select>
+          </label>
+        </div>
+        <label class="checkline"><input type="checkbox" id="opt-preview" checked /> Ver minha transmissão (só vídeo, gasta internet)</label>
+      </div>
+      <label class="checkline"><input type="checkbox" id="opt-audio" checked /> Incluir áudio</label>
+      <div class="notice" id="browser-audio-hint">
+        <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-info"></use></svg>
+        <span>O navegador vai pedir uma tela, janela ou aba. No Windows, marque <b>Compartilhar áudio do sistema</b>. Numa aba, marque <b>Compartilhar áudio da guia</b>.</span>
+      </div>
+      <div class="notice" id="desktop-promo">
+        <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-windows"></use></svg>
+        <span>No <b>app Windows</b>: até 1440p60, captura pela GPU, H.264, VP9 ou AV1 e áudio do sistema sem o som do próprio app.</span>
+      </div>
+      <p id="slots" class="small"></p>
+      <div class="form-actions">
+        <button type="button" class="button ghost" data-close>Cancelar</button>
+        <button type="submit" id="btn-stream" class="button primary">
+          <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-room"></use></svg><span id="btn-stream-text">Escolher tela</span>
+        </button>
+      </div>
+    </form>
+  </dialog>
 
   <!-- Evento: vídeo ou live do YouTube/Twitch/Kick assistido junto -->
-  <dialog id="dlg-event" class="dialog">
-    <form id="form-event" class="stack">
-      <h2>🎬 Evento</h2>
-      <p class="hint">Todo mundo na sala assiste o mesmo vídeo ou live do YouTube, da Twitch ou da Kick, no mesmo ponto. Ninguém precisa transmitir a tela. Você controla tocar, pausar, pular e encerrar.</p>
+  <dialog id="dlg-event" aria-labelledby="event-dialog-title">
+    <header class="dialog-head">
+      <h2 id="event-dialog-title">Começar evento</h2>
+      <button type="button" class="icon-btn ghost" data-close title="Fechar janela" aria-label="Fechar janela"><svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-close"></use></svg></button>
+    </header>
+    <form id="form-event" class="dialog-body stack">
+      <p class="small">Todo mundo na sala assiste o mesmo vídeo ou live do YouTube, da Twitch ou da Kick, no mesmo ponto. Ninguém precisa transmitir a tela. Você controla tocar, pausar, pular e encerrar.</p>
       <label class="field">Link do YouTube, Twitch ou Kick
         <input id="event-url" required placeholder="youtube.com/watch?v=…, twitch.tv/canal ou kick.com/canal" autocomplete="off" />
       </label>
-      <label class="field">Nome do evento (opcional)
+      <label class="field">Título do evento <small>Opcional</small>
         <input id="event-title" maxlength="100" placeholder="Usa o título do vídeo se ficar vazio" autocomplete="off" />
       </label>
-      <div class="row-end">
-        <button type="button" id="event-cancel" class="btn btn-ghost">Cancelar</button>
-        <button type="submit" id="event-start" class="btn btn-primary">Começar</button>
+      <div class="form-actions">
+        <button type="button" id="event-cancel" class="button ghost">Cancelar</button>
+        <button type="submit" id="event-start" class="button primary">
+          <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-bell"></use></svg>Começar evento
+        </button>
       </div>
     </form>
   </dialog>
 
   <!-- Título e descrição do clipe -->
-  <dialog id="dlg-clip" class="dialog">
-    <form id="form-clip" method="dialog" class="stack">
-      <h2>Clipe pronto ✂</h2>
-      <video id="clip-preview" controls playsinline muted></video>
-      <label class="field">Título (opcional)
-        <input id="clip-title" maxlength="100" placeholder="Ex.: que jogada, @fulano!" autocomplete="off" />
+  <dialog id="dlg-clip" aria-labelledby="clip-dialog-title">
+    <header class="dialog-head">
+      <div>
+        <h2 id="clip-dialog-title">Clipe pronto</h2>
+        <p class="small" id="clip-dialog-source"></p>
+      </div>
+    </header>
+    <form id="form-clip" method="dialog" class="dialog-body stack">
+      <video id="clip-preview" class="clip-cover" controls playsinline muted></video>
+      <label class="field">Título <small>Opcional</small>
+        <input id="clip-title" maxlength="100" placeholder="Dê um nome ao momento" autocomplete="off" />
       </label>
-      <label class="field">Descrição (opcional)
-        <textarea id="clip-description" maxlength="500" rows="3" placeholder="Marque a galera com @ pra aparecer no perfil deles"></textarea>
+      <label class="field">Descrição <small>Opcional</small>
+        <textarea id="clip-description" maxlength="500" rows="2" placeholder="Marque a galera com @ pra aparecer no perfil deles"></textarea>
       </label>
-      <p class="hint">Quem você marcar com <b>@</b> fica com o clipe no perfil. O link vai pro Discord quando você publicar.</p>
-      <div class="row-end">
-        <button type="button" id="clip-skip" class="btn btn-ghost">Pular</button>
-        <button type="submit" class="btn btn-primary">Publicar</button>
+      <p class="small">Quem você marcar com <b>@</b> fica com o clipe no perfil. O link vai pro Discord quando você publicar.</p>
+      <div class="form-actions">
+        <button type="button" id="clip-skip" class="button ghost">Pular</button>
+        <button type="submit" class="button primary" id="clip-submit">
+          <svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-clips"></use></svg><span>Publicar</span>
+        </button>
       </div>
     </form>
   </dialog>
 
-  <!-- Clipes do canal: player grande + lista -->
-  <dialog id="dlg-clips" class="dialog dialog-wide">
-    <div class="clips-modal">
-      <div class="row-between clips-modal-head">
-        <h2>Clipes <span id="clips-modal-count" class="muted"></span></h2>
-        <div class="row nowrap">
-          <div id="clips-filter" class="seg">
-            <button data-filter="all" class="active">Todos</button>
-            <button data-filter="mine">Meus</button>
-            <button data-filter="saved">Salvos ⭐</button>
-          </div>
-          <button id="clips-close" class="btn btn-ghost btn-sm" aria-label="Fechar">✕</button>
-        </div>
-      </div>
-      <div class="clips-modal-body">
-        <div class="clips-player">
-          <video id="clips-player" controls playsinline></video>
-          <div id="clips-player-info" class="clips-player-info"></div>
-        </div>
-        <ul id="clips-modal-list" class="clips-side"></ul>
-      </div>
-    </div>
-  </dialog>
+  <!-- Configurações: um único lugar -->
+  <dialog id="dlg-settings" class="wide settings-modal" aria-labelledby="settings-title">
+    <header class="dialog-head">
+      <h2 id="settings-title">Configurações</h2>
+      <button type="button" class="icon-btn ghost" id="settings-close" title="Fechar janela" aria-label="Fechar janela"><svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-close"></use></svg></button>
+    </header>
+    <div class="settings-grid">
+      <nav class="settings-nav" aria-label="Seções das configurações">
+        <button type="button" class="nav-item" data-section="appearance"><svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-appearance"></use></svg> Aparência</button>
+        <button type="button" class="nav-item" data-section="watch"><svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-room"></use></svg> Reprodução</button>
+        <button type="button" class="nav-item" data-section="broadcast"><svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-broadcast"></use></svg> Transmissão</button>
+        <button type="button" class="nav-item" data-section="clips"><svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-clips"></use></svg> Clipes</button>
+        <button type="button" class="nav-item" data-section="desktop"><svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-windows"></use></svg> App Windows</button>
+        <button type="button" class="nav-item" data-section="channel" id="settings-nav-channel"><svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-users"></use></svg> Canal</button>
+      </nav>
+      <div class="settings-form">
+        <div class="settings-content dialog-body">
+          <section class="stack" data-section="appearance">
+            <h3>Aparência</h3>
+            <label class="field">Tema
+              <select id="set-theme">
+                <option value="dark">Escuro</option>
+                <option value="light">Claro</option>
+              </select>
+            </label>
+          </section>
 
-  <!-- Gerenciar canal (dono) -->
-  <dialog id="dlg-settings" class="dialog">
-    <div class="stack">
-      <div class="row-between"><h2>Configurações</h2><button id="settings-close" class="btn btn-ghost btn-sm">✕</button></div>
+          <section class="stack" data-section="watch">
+            <div><h3>Padrões de reprodução</h3><p class="small">Usados ao abrir a sala ou uma nova live.</p></div>
+            <label class="field">Layout padrão da sala
+              <select id="set-layout">
+                <option value="theater">Teatro</option>
+                <option value="focus">Em destaque</option>
+                <option value="split">Lado a lado</option>
+              </select>
+            </label>
+            <label class="field">Qualidade ao assistir
+              <select id="set-watch-quality">
+                <option value="high">Original</option>
+                <option value="low">Economia (internet fraca)</option>
+              </select>
+            </label>
+          </section>
 
-      <div class="clip-settings" id="clip-settings">
-            <div class="clip-settings-head">
-              <strong>Botões de clipe</strong>
-              <button type="button" class="btn btn-ghost btn-sm" id="clip-settings-reset">Padrão</button>
+          <section class="stack" data-section="broadcast">
+            <div><h3>Padrões de transmissão</h3><p class="small">Dá pra ajustar tudo ao começar cada live.</p></div>
+            <label class="field">Qualidade padrão
+              <select id="set-stream-quality"></select>
+            </label>
+            <label class="field">Tipo de conteúdo padrão
+              <select id="set-stream-content">
+                <option value="motion">Jogo ou vídeo (fluidez)</option>
+                <option value="detail">Texto ou código (nitidez)</option>
+              </select>
+            </label>
+            <label class="checkline"><input type="checkbox" id="set-stream-audio" /> Incluir áudio por padrão</label>
+          </section>
+
+          <section class="stack" data-section="clips">
+            <div class="section-head">
+              <div><h3>Durações rápidas</h3><p class="small" id="clip-settings-hint">As três opções aparecem ao clipar uma live.</p></div>
+              <button type="button" class="button ghost" id="clip-settings-reset">Restaurar padrão</button>
             </div>
-            <p class="hint" id="clip-settings-hint">Durações do menu ✂ Clipar.</p>
-            <ul id="clip-slots" class="clip-slots"></ul>
-      </div>
+            <ul id="clip-slots" class="setting-rows"></ul>
+          </section>
 
-      <h3 class="section-title">App</h3>
-      <p id="build" class="hint"></p>
-      <button type="button" id="btn-update" class="btn btn-ghost btn-sm" hidden>⟳ Procurar atualização do app</button>
+          <section class="stack" data-section="desktop">
+            <div><h3>Atalhos globais de clipe</h3><p class="small" id="hotkeys-hint"></p></div>
+            <ul id="hotkey-slots" class="setting-rows"></ul>
+            <div class="setting-row">
+              <span id="build" class="small"></span>
+              <button type="button" id="btn-update" class="button" hidden>Procurar atualização</button>
+            </div>
+          </section>
+
+          <section class="stack" data-section="channel">
+            <div><h3 id="manage-name"></h3><p class="small" id="manage-role"></p></div>
+            <div id="manage-owner" class="stack">
+              <h3>Convites</h3>
+              <p class="small">Só quem tiver o link entra no canal. No Discord, o dono também pode usar <code>/convite</code>.</p>
+              <div class="form-grid">
+                <label class="field">Validade
+                  <select id="invite-days">
+                    <option value="1">1 dia</option>
+                    <option value="7" selected>7 dias</option>
+                    <option value="30">30 dias</option>
+                    <option value="0">Nunca expira</option>
+                  </select>
+                </label>
+                <label class="field">Limite de usos
+                  <select id="invite-uses">
+                    <option value="">Usos ilimitados</option>
+                    <option value="1">1 uso</option>
+                    <option value="5">5 usos</option>
+                    <option value="10">10 usos</option>
+                    <option value="25">25 usos</option>
+                  </select>
+                </label>
+              </div>
+              <div><button type="button" id="btn-invite" class="button"><svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-link"></use></svg>Criar convite</button></div>
+              <ul id="invite-list" class="setting-rows"></ul>
+
+              <h3>Avisos no Discord</h3>
+              <div class="form-grid">
+                <label class="field">Avisos de live
+                  <select id="discord-notify"></select>
+                </label>
+                <label class="field">Avisos de clipes
+                  <select id="discord-clips"></select>
+                </label>
+              </div>
+            </div>
+            <h3>Membros <span id="members-count" class="muted"></span></h3>
+            <ul id="member-list" class="setting-rows"></ul>
+          </section>
+        </div>
+        <div class="settings-actions form-actions">
+          <small class="muted">As alterações são salvas na hora, neste navegador.</small>
+          <button type="button" class="button primary" id="settings-done">Concluído</button>
+        </div>
+      </div>
     </div>
   </dialog>
 
-  <dialog id="dlg-manage" class="dialog">
-    <div class="stack">
-      <div class="row-between"><h2>Canal <span id="manage-name"></span></h2><button id="manage-close" class="btn btn-ghost btn-sm">✕</button></div>
-
-      <h3 class="section-title">Convites</h3>
-      <p class="hint">Só quem tiver o link entra no canal. Mande pra galera no Discord.</p>
-      <div class="row">
-        <select id="invite-days">
-          <option value="1">Vale 1 dia</option>
-          <option value="7" selected>Vale 7 dias</option>
-          <option value="30">Vale 30 dias</option>
-          <option value="0">Nunca expira</option>
-        </select>
-        <select id="invite-uses">
-          <option value="">Usos ilimitados</option>
-          <option value="1">1 uso</option>
-          <option value="5">5 usos</option>
-          <option value="10">10 usos</option>
-          <option value="25">25 usos</option>
-        </select>
-        <button id="btn-invite" class="btn btn-primary">Criar link</button>
+  <!-- Confirmação curta -->
+  <dialog id="dlg-confirm" aria-labelledby="confirm-title">
+    <header class="dialog-head"><h2 id="confirm-title"></h2></header>
+    <div class="dialog-body stack">
+      <p id="confirm-text"></p>
+      <div class="form-actions">
+        <button type="button" class="button ghost" id="confirm-cancel">Cancelar</button>
+        <button type="button" class="button danger" id="confirm-ok"></button>
       </div>
-      <ul id="invite-list" class="list"></ul>
-
-      <h3 class="section-title">Avisos no Discord</h3>
-      <label class="field">Canal dos avisos de live
-        <select id="discord-notify"></select>
-      </label>
-      <label class="field">Canal dos clipes
-        <select id="discord-clips"></select>
-      </label>
-
-      <h3 class="section-title">Membros <span id="members-count" class="muted"></span></h3>
-      <ul id="member-list" class="list"></ul>
     </div>
   </dialog>
 
@@ -315,42 +534,45 @@
   <div id="audio-sink" hidden></div>
 
   <template id="tpl-tile">
-    <div class="tile">
-      <video playsinline autoplay muted></video>
-      <div class="tile-loading">Conectando…</div>
-      <div class="tile-pip-note" hidden>
-        <span>Tocando em janela flutuante</span>
-        <button class="pip-back">Trazer de volta</button>
-      </div>
-      <div class="tile-top">
-        <span class="badge-live">AO VIVO</span>
-        <span class="tile-name"></span>
-        <span class="tile-res muted"></span>
-      </div>
-      <div class="tile-controls">
-        <div class="ctl-group">
-          <button class="ctl ctl-mute" title="Mutar/desmutar">🔊</button>
-          <input class="ctl-volume" type="range" min="0" max="1" step="0.01" value="1" title="Volume" />
+    <article class="player tile">
+      <div class="screen">
+        <video playsinline autoplay muted></video>
+        <div class="tile-loading">Conectando…</div>
+        <div class="tile-pip-note" hidden>
+          <span>Tocando em janela flutuante</span>
+          <button type="button" class="button primary pip-back">Trazer de volta</button>
         </div>
-        <select class="ctl-quality" title="Qualidade">
-          <option value="high">Original</option>
-          <option value="low">Economia</option>
-        </select>
-        <span class="spacer"></span>
-        <div class="clip-wrap">
-          <button class="ctl ctl-clip" title="Clipar os últimos segundos">✂ Clipar</button>
-          <div class="clip-menu" hidden>
-            <button data-seconds="30">Últimos 30 s</button>
-            <button data-seconds="60">Último 1 min</button>
-            <button data-seconds="180">Últimos 3 min</button>
+        <div class="screen-badges">
+          <span class="on-air"><i class="dot"></i> AO VIVO</span>
+          <span class="tile-res"></span>
+        </div>
+      </div>
+      <div class="player-bar">
+        <div class="identity">
+          <span class="avatar tile-avatar" aria-hidden="true"></span>
+          <div><strong class="tile-name"></strong><small class="tile-sub"></small></div>
+        </div>
+        <div class="player-controls">
+          <button type="button" class="icon-btn ghost ctl-mute" title="Ativar som" aria-label="Ativar som"><svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-mute"></use></svg></button>
+          <input class="volume ctl-volume" type="range" min="0" max="1" step="0.01" value="1" aria-label="Volume" />
+          <select class="ctl-quality" title="Qualidade" aria-label="Qualidade">
+            <option value="high">Original</option>
+            <option value="low">Economia</option>
+          </select>
+          <div class="clip-wrap">
+            <button type="button" class="button ctl-clip" title="Clipar os últimos segundos"><svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-clips"></use></svg><span>Clipar</span></button>
+            <div class="clip-menu" hidden></div>
           </div>
+          <button type="button" class="button danger ctl-stop" title="Parar transmissão" hidden><svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-stop"></use></svg><span>Parar</span></button>
+          <button type="button" class="icon-btn ghost ctl-pip" title="Janela flutuante" aria-label="Janela flutuante" hidden>
+            <svg class="icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><rect x="12" y="12" width="7" height="5.5" rx="1.2"/></svg>
+          </button>
+          <button type="button" class="icon-btn ghost ctl-focus" title="Destacar" aria-label="Destacar"><svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-focus"></use></svg></button>
+          <button type="button" class="icon-btn ghost ctl-theater" title="Modo Teatro" aria-label="Modo Teatro" aria-pressed="false"><svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-theater"></use></svg></button>
+          <button type="button" class="icon-btn ghost ctl-full" title="Tela cheia" aria-label="Tela cheia"><svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-expand"></use></svg></button>
         </div>
-        <button class="ctl ctl-stop" title="Parar transmissão" hidden>■ Parar</button>
-        <button class="ctl ctl-pip" title="Janela flutuante (picture-in-picture)" hidden>⧉</button>
-        <button class="ctl ctl-focus" title="Destacar">⤢</button>
-        <button class="ctl ctl-full" title="Tela cheia">⛶</button>
       </div>
-    </div>
+    </article>
   </template>
 
   <script type="module" src="/app.js"></script>

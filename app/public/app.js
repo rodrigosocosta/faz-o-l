@@ -79,12 +79,232 @@ function livekitUrl(fromServer) {
   return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
 }
 
-// ---------------- navegação ----------------
-// Rotas: /  (meus canais) • /c/<id> (canal) • /u/<@> (perfil) • /convite/<código>
+// ---------------- peças visuais (kit de design) ----------------
 
-const VIEWS = ['view-login', 'view-home', 'view-invite', 'view-join', 'view-room', 'view-profile'];
+/** Ícone do sprite do kit (grade 24 × 24, traço de 1,8 px). */
+function ico(name) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'icon');
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+  use.setAttribute('href', `/img/icones.svg#i-${name}`);
+  svg.append(use);
+  return svg;
+}
+
+function setIco(el, name) {
+  el.querySelector('use')?.setAttribute('href', `/img/icones.svg#i-${name}`);
+}
+
+const initials = (name = '') => name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
+
+/** Cor estável por nome para as iniciais (tons do kit). */
+function tint(name = '') {
+  let h = 0;
+  for (const c of name) h = (h * 31 + c.codePointAt(0)) % 360;
+  return { bg: `hsl(${h} 22% 30%)`, ink: `hsl(${h} 70% 88%)` };
+}
+
+/** Preenche um avatar (círculo) ou marca de canal (quadrado) com a foto ou as iniciais. */
+function fillMark(el, name, image) {
+  el.replaceChildren();
+  if (image) {
+    const img = document.createElement('img');
+    img.src = image;
+    img.alt = '';
+    img.loading = 'lazy';
+    el.append(img);
+  } else {
+    el.textContent = initials(name);
+  }
+  const { bg, ink } = tint(name);
+  el.style.setProperty('--avatar-bg', bg);
+  el.style.setProperty('--avatar-ink', ink);
+}
+
+function makeAvatar(name, image, extra = '') {
+  const span = document.createElement('span');
+  span.className = `avatar ${extra}`.trim();
+  span.setAttribute('aria-hidden', 'true');
+  fillMark(span, name, image);
+  return span;
+}
+
+function makeMark(name, image) {
+  const span = document.createElement('span');
+  span.className = 'channel-mark';
+  span.setAttribute('aria-hidden', 'true');
+  fillMark(span, name, image);
+  return span;
+}
+
+/** Botão com ícone e texto, no padrão .button do kit. */
+function makeButton(label, icon, classes = '') {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = `button ${classes}`.trim();
+  if (icon) b.append(ico(icon));
+  if (label) b.append(label);
+  return b;
+}
+
+function makeIconButton(label, icon, classes = 'ghost') {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = `icon-btn ${classes}`.trim();
+  b.title = label;
+  b.setAttribute('aria-label', label);
+  b.append(ico(icon));
+  return b;
+}
+
+/** Confirmação curta (encerrar, excluir, revogar, remover) com o objeto da ação identificado. */
+function confirmAction(title, text, okLabel) {
+  const dlg = $('#dlg-confirm');
+  $('#confirm-title').textContent = title;
+  $('#confirm-text').textContent = text;
+  $('#confirm-ok').textContent = okLabel;
+  return new Promise((resolve) => {
+    const done = (value) => {
+      dlg.removeEventListener('close', onClose);
+      $('#confirm-ok').onclick = null;
+      $('#confirm-cancel').onclick = null;
+      if (dlg.open) dlg.close();
+      resolve(value);
+    };
+    const onClose = () => done(false);
+    dlg.addEventListener('close', onClose);
+    $('#confirm-ok').onclick = () => done(true);
+    $('#confirm-cancel').onclick = () => done(false);
+    dlg.showModal();
+    $('#confirm-cancel').focus();
+  });
+}
+
+async function copyText(text, okMessage) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(okMessage);
+  } catch {
+    prompt('Copie o link:', text);
+  }
+}
+
+// Botões [data-close] fecham o diálogo em que estão
+document.addEventListener('click', (e) => {
+  const close = e.target.closest('[data-close]');
+  if (close) close.closest('dialog')?.close();
+});
+
+// ---------------- tema e barra lateral ----------------
+
+const compactViewport = matchMedia('(max-width: 970px)');
+
+function applyTheme() {
+  const light = store.get('theme', 'dark') === 'light';
+  if (light) document.documentElement.dataset.theme = 'light';
+  else delete document.documentElement.dataset.theme;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', light ? '#f4f6fa' : '#16191e');
+}
+
+function applySidebar() {
+  const pref = store.get('sidebar', '');
+  const collapsed = pref ? pref === 'collapsed' : compactViewport.matches;
+  $('#app').dataset.sidebar = collapsed ? 'collapsed' : 'expanded';
+  const toggle = $('#sidebar-toggle');
+  const label = collapsed ? 'Expandir barra lateral' : 'Recolher barra lateral';
+  toggle.setAttribute('aria-expanded', String(!collapsed));
+  toggle.setAttribute('aria-label', label);
+  toggle.title = label;
+  setIco(toggle, collapsed ? 'sidebar-expand' : 'sidebar-collapse');
+}
+compactViewport.addEventListener('change', applySidebar);
+$('#sidebar-toggle').addEventListener('click', () => {
+  store.set('sidebar', $('#app').dataset.sidebar === 'collapsed' ? 'expanded' : 'collapsed');
+  applySidebar();
+});
+applyTheme();
+applySidebar();
+
+// ---------------- navegação ----------------
+// Rotas: /  (meus canais) • /c/<id> (sala) • /c/<id>/clipes[/<clipe>] • /u/<@> (perfil) • /convite/<código>
+
+const VIEWS = ['view-home', 'view-invite', 'view-join', 'view-room', 'view-clips', 'view-profile'];
+// Página atual na barra lateral: canais, sala, clipes ou perfil
+const NAV_OF_VIEW = { 'view-home': 'home', 'view-invite': 'home', 'view-join': 'room', 'view-room': 'room', 'view-clips': 'clips', 'view-profile': 'profile' };
+
 function show(view) {
+  const login = view === 'view-login';
+  $('#view-login').hidden = !login;
+  $('#app').hidden = login;
+  if (login) return;
   for (const id of VIEWS) $(`#${id}`).hidden = id !== view;
+  renderChrome(NAV_OF_VIEW[view]);
+}
+
+/** Barra lateral e cabeçalho: canal atual, página atual e ações da sala. */
+function renderChrome(current = state.nav) {
+  state.nav = current;
+  const c = state.channel;
+  for (const [id, key] of [['#nav-home', 'home'], ['#nav-room', 'room'], ['#nav-clips', 'clips']]) {
+    if (current === key) $(id).setAttribute('aria-current', 'page');
+    else $(id).removeAttribute('aria-current');
+  }
+  const ownProfile = current === 'profile' && state.profileUser && state.profileUser === state.me?.username;
+  for (const id of ['#btn-profile', '#btn-profile-mobile']) {
+    if (ownProfile) $(id).setAttribute('aria-current', 'page');
+    else $(id).removeAttribute('aria-current');
+  }
+  for (const id of ['#nav-room', '#nav-clips']) $(id).setAttribute('aria-disabled', String(!c));
+  $('#nav-channel-label').textContent = c ? c.name : 'Canal atual';
+  $('#nav-room').href = c ? `/c/${c.id}` : '/';
+  $('#nav-clips').href = c ? `/c/${c.id}/clipes` : '/';
+  $('#shelf-all').href = c ? `/c/${c.id}/clipes` : '/';
+
+  if (state.me) {
+    $('#side-name').textContent = state.me.name;
+    fillMark($('#side-avatar'), state.me.name, state.me.avatar);
+    const href = profileHref(state.me.username);
+    for (const id of ['#btn-profile', '#btn-profile-mobile']) {
+      $(id).href = href;
+      $(id).hidden = !state.me.username;
+    }
+  }
+
+  // Cabeçalho: canal atual em sala/clipes; marca do Faz o L nas outras páginas
+  const title = $('#topbar-title');
+  const inChannel = c && (current === 'room' || current === 'clips');
+  if (inChannel) {
+    const name = document.createElement('span');
+    name.textContent = c.name;
+    title.replaceChildren(makeMark(c.name, c.icon), name);
+  } else {
+    const img = document.createElement('img');
+    img.src = '/img/logo-faz-o-l.svg';
+    img.width = 29;
+    img.height = 29;
+    img.alt = '';
+    const name = document.createElement('span');
+    name.textContent = 'Faz o L';
+    title.replaceChildren(img, name);
+  }
+  renderRoomActions();
+}
+
+/** Transmitir / Encerrar live / Começar evento no cabeçalho (só com a sala aberta). */
+function renderRoomActions() {
+  const inRoom = !!state.room && !$('#view-room').hidden;
+  const appLive = !!myAppStream();
+  const live = !!state.local || appLive;
+  $('#btn-broadcast').hidden = !inRoom || live;
+  $('#btn-stop-live').hidden = !inRoom || !live;
+  $('#btn-stop-live').disabled = appLive && !state.local;
+  $('#btn-stop-live').title = appLive && !state.local ? 'Você está ao vivo pelo app: pare por lá' : '';
+  $('#btn-stop-live-text').textContent = appLive && !state.local ? 'Ao vivo pelo app' : 'Encerrar live';
+  let eventMine = false;
+  try { eventMine = !!ev.data && canControlEvent(); } catch { /* evento ainda não carregado */ }
+  $('#btn-event').hidden = !inRoom;
+  $('#btn-event').querySelector('span').textContent = eventMine ? 'Encerrar evento' : 'Começar evento';
 }
 
 /** Caminho da API do canal atual. */
@@ -110,12 +330,6 @@ function profileHref(username) {
   return username ? `/u/${encodeURIComponent(username)}` : '#';
 }
 
-function setIcon(img, fallback, url) {
-  img.hidden = !url;
-  if (url) img.src = url;
-  if (fallback) fallback.hidden = !!url;
-}
-
 async function route() {
   const path = location.pathname;
   const params = new URLSearchParams(location.search);
@@ -130,18 +344,21 @@ async function route() {
   if (!state.me) return showLogin(params.get('erro'), path);
 
   const channelMatch = path.match(/^\/c\/([\w-]+)/);
+  const clipsMatch = path.match(/^\/c\/([\w-]+)\/clipes(?:\/([\w-]+))?/);
   const inviteMatch = path.match(/^\/convite\/([\w-]+)/);
   const profileMatch = path.match(/^\/u\/([^/]+)/);
 
-  // Saiu da página do canal: sai da sala. Ver um perfil não conta: a sala (e a sua
-  // transmissão) continua rodando por trás, e o "Voltar" traz de volta.
+  // Saiu do canal: sai da sala. Ver um perfil ou os clipes do mesmo canal não conta:
+  // a sala (e a sua transmissão) continua rodando por trás.
   const leavingRoom = !profileMatch && (!channelMatch || channelMatch[1] !== state.channel?.id);
   if (state.room && leavingRoom) await leave();
+  if (!clipsMatch) $('#clip-player').pause();
   if (inviteMatch) return showInvite(inviteMatch[1]);
   if (profileMatch) return showProfile(decodeURIComponent(profileMatch[1]));
+  if (clipsMatch) return showClipsPage(clipsMatch[1], clipsMatch[2] || null);
   if (channelMatch) {
     if (params.get('novo')) {
-      toast('Canal criado! Abra ⚙ Canal pra convidar a galera.');
+      toast('Canal criado! Abra Configurações → Canal pra convidar a galera.');
       history.replaceState(null, '', path);
     }
     return showChannel(channelMatch[1]);
@@ -189,16 +406,13 @@ async function logout() {
   location.href = '/';
 }
 $('#btn-logout-home').addEventListener('click', logout);
+$('#btn-logout-profile').addEventListener('click', logout);
 
 // ---------------- meus canais ----------------
 
 async function showHome(erro) {
   show('view-home');
   document.title = 'Faz o L';
-  $('#home-name').textContent = state.me.name;
-  setIcon($('#home-avatar'), null, state.me.avatar);
-  $('#home-me').href = profileHref(state.me.username);
-  $('#home-me').toggleAttribute('data-link', !!state.me.username);
   $('#home-error').hidden = !erro;
   if (erro) {
     $('#home-error').textContent = LOGIN_ERRORS[erro] || LOGIN_ERRORS.login;
@@ -222,25 +436,17 @@ async function showHome(erro) {
     ...channels.map((c) => {
       const li = document.createElement('li');
       const a = document.createElement('a');
+      a.className = 'channel-row';
       a.href = `/c/${c.id}`;
       a.dataset.link = '';
-      if (c.icon) {
-        const img = document.createElement('img');
-        img.src = c.icon;
-        img.alt = '';
-        a.append(img);
-      } else {
-        const span = document.createElement('span');
-        span.className = 'guild-fallback';
-        span.textContent = c.name.slice(0, 1).toUpperCase();
-        a.append(span);
-      }
-      const name = document.createElement('b');
+      const text = document.createElement('span');
+      text.className = 'channel-text';
+      const name = document.createElement('strong');
       name.textContent = c.name;
-      const role = document.createElement('span');
-      role.className = 'role';
-      role.textContent = c.role === 'owner' ? 'dono' : '';
-      a.append(name, role);
+      const role = document.createElement('small');
+      role.textContent = c.role === 'owner' ? 'Dono' : 'Membro';
+      text.append(name, role);
+      a.append(makeMark(c.name, c.icon), text, ico('right'));
       li.append(a);
       return li;
     }),
@@ -256,7 +462,7 @@ async function showInvite(code) {
   try {
     const info = await api(`/api/invites/${code}`);
     $('#invite-name').textContent = info.channel.name;
-    setIcon($('#invite-icon'), null, info.channel.icon);
+    fillMark($('#invite-mark'), info.channel.name, info.channel.icon);
     if (info.member) return navigate(`/c/${info.channel.id}`, { replace: true });
     if (!info.valid) {
       $('#invite-error').textContent = 'Esse convite expirou ou já foi usado. Peça outro pro dono do canal.';
@@ -273,7 +479,8 @@ async function showInvite(code) {
       }
     };
   } catch (err) {
-    $('#invite-name').textContent = 'Convite inválido';
+    $('#invite-name').textContent = 'Convite indisponível';
+    fillMark($('#invite-mark'), '?', '');
     $('#invite-error').textContent = err.message;
     $('#invite-error').hidden = false;
     $('#btn-accept').hidden = true;
@@ -282,46 +489,49 @@ async function showInvite(code) {
 
 // ---------------- canal ----------------
 
-async function showChannel(id) {
-  if (state.room && state.channel?.id === id) {
-    document.title = `${state.channel.name} • Faz o L`;
-    return show('view-room');
-  }
+/** Carrega o canal (se ainda não for o atual). false = sem acesso, já voltou pra home. */
+async function loadChannel(id) {
+  if (state.channel?.id === id) return true;
   try {
     state.channel = await api(`/api/c/${id}`);
   } catch (err) {
     toast(err.message, true);
-    return navigate('/', { replace: true });
+    navigate('/', { replace: true });
+    return false;
   }
   state.limits = state.channel.limits;
   state.members = null;
+  clipsView.clips = [];
+  renderClipsPanel([]);
+  startClipsRefresh();
+  return true;
+}
+
+async function showChannel(id) {
+  if (state.room && state.channel?.id === id) {
+    document.title = `${state.channel.name} • Faz o L`;
+    show('view-room');
+    renderClipShelf();
+    return;
+  }
+  if (!(await loadChannel(id))) return;
   const c = state.channel;
   document.title = `${c.name} • Faz o L`;
   $('#join-channel').textContent = c.name;
-  $('#room-name').textContent = c.name;
-  setIcon($('#join-icon'), $('#join-logo'), c.icon);
-  setIcon($('#room-icon'), $('#room-logo'), c.icon);
-  $('#btn-manage').hidden = c.role !== 'owner';
-  $('#btn-profile').href = profileHref(state.me.username);
-  $('#btn-profile').toggleAttribute('data-link', !!state.me.username);
-  setIcon($('#hud-avatar'), null, state.me.avatar);
-
+  fillMark($('#join-mark'), c.name, c.icon);
   show('view-join');
-  $('#join-name').textContent = state.me.name;
-  setIcon($('#join-avatar'), null, state.me.avatar);
   refreshJoinStatus();
 }
 
 async function refreshJoinStatus() {
+  $('#join-status').textContent = `Você está conectado como ${state.me.name}.`;
   try {
     const s = await api(ch('/status'));
     const live = s.streamers.filter((x) => x.live);
     $('#join-status').textContent = live.length
-      ? `🔴 Ao vivo: ${live.map((x) => x.name).join(' e ')} • ${s.viewers} assistindo`
-      : `Ninguém ao vivo agora • ${s.total} na sala`;
-  } catch {
-    $('#join-status').textContent = '';
-  }
+      ? `${live.length} de ${state.limits.maxStreamers} ao vivo: ${live.map((x) => x.name).join(' e ')} · ${s.viewers} assistindo · Você está conectado como ${state.me.name}.`
+      : `Nenhuma transmissão ao vivo · ${s.total} na sala · Você está conectado como ${state.me.name}.`;
+  } catch { /* fica só o nome */ }
 }
 
 /** Membros do canal (pra marcar com @). */
@@ -340,39 +550,34 @@ async function channelMembers() {
 
 $('#btn-join').addEventListener('click', join);
 $('#btn-leave').addEventListener('click', async () => {
+  if ((state.local || myAppStream()) && !(await confirmAction('Sair da sala?', 'Sua transmissão será encerrada ao sair da sala.', 'Sair e encerrar'))) return;
   await leave();
   show('view-join');
   refreshJoinStatus();
 });
-// Gaveta da direita: um painel por vez (Transmitir / Na sala)
-const PANEL_TITLES = { stream: 'Transmitir', people: 'Na sala' };
-function openPanel(name, { toggle = false } = {}) {
-  const drawer = $('#sidebar');
-  const current = drawer.hidden ? null : drawer.dataset.panel;
-  const next = toggle && name === current ? null : name;
-  drawer.hidden = !next;
-  $('#shell').classList.toggle('drawer-open', !!next);
-  if (next) {
-    drawer.dataset.panel = next;
-    $('#drawer-title').textContent = PANEL_TITLES[next];
-    for (const p of drawer.querySelectorAll('.panel')) p.hidden = p.dataset.panel !== next;
-  }
-  for (const b of document.querySelectorAll('.rail-btn[data-panel]')) b.classList.toggle('active', b.dataset.panel === next);
-  store.set('room-panel', next || '');
+
+// Transmitir: o diálogo explica de onde vem a captura e mostra as vagas
+function openBroadcast() {
+  if (!state.room) return;
+  renderPresence();
+  $('#dlg-broadcast').showModal();
 }
-for (const b of document.querySelectorAll('.rail-btn[data-panel]')) {
-  b.addEventListener('click', () => openPanel(b.dataset.panel, { toggle: true }));
-}
-for (const b of document.querySelectorAll('[data-open-panel]')) {
-  b.addEventListener('click', () => openPanel(b.dataset.openPanel));
-}
-$('#drawer-close').addEventListener('click', () => openPanel(null));
-$('#rail-clips').addEventListener('click', () => openClipsDialog());
+$('#btn-broadcast').addEventListener('click', openBroadcast);
+for (const b of document.querySelectorAll('[data-open-broadcast]')) b.addEventListener('click', openBroadcast);
+$('#form-broadcast').addEventListener('submit', (e) => {
+  e.preventDefault();
+  if (state.local) return;
+  startStream();
+});
+$('#btn-stop-live').addEventListener('click', async () => {
+  if (!state.local) return;
+  if (await confirmAction('Encerrar live?', 'Sua transmissão e o compartilhamento de tela serão encerrados.', 'Encerrar live')) stopStream();
+});
 
 async function join() {
   const btn = $('#btn-join');
   btn.disabled = true;
-  btn.textContent = 'Entrando…';
+  btn.querySelector('span').textContent = 'Entrando…';
   try {
     // Dentro do app desktop a página entra como "<id>:app": dá pra estar ao mesmo
     // tempo no app (transmitindo) e no navegador (assistindo) sem um derrubar o outro
@@ -392,8 +597,8 @@ async function join() {
     loadEvent();
 
     show('view-room');
-    // Reabre o último painel (na 1ª vez, "Transmitir" em tela grande)
-    openPanel(store.get('room-panel', innerWidth > 1100 ? 'stream' : '') || null);
+    state.layoutMode = store.get('layout', 'theater');
+    layout();
     renderPresence();
     startClipsRefresh();
   } catch (err) {
@@ -401,7 +606,7 @@ async function join() {
     state.room = null;
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Entrar na sala';
+    btn.querySelector('span').textContent = 'Entrar na sala';
   }
 }
 
@@ -414,6 +619,7 @@ async function leave() {
   await state.room.disconnect();
   state.room = null;
   for (const id of [...state.tiles.keys()]) removeTile(id);
+  renderRoomActions();
 }
 
 function wireRoom(room) {
@@ -538,6 +744,7 @@ function ensureTile(id, name, isLocal = false) {
     id,
     el,
     isLocal,
+    name,
     video: el.querySelector('video'),
     publication: null,
     audioTrack: null,
@@ -545,7 +752,13 @@ function ensureTile(id, name, isLocal = false) {
     muted: true, // toda live começa sem som: quem assiste desmuta
     quality: store.get('quality', 'high'),
   };
+  const who = id === '__local__' ? state.me : state.room?.remoteParticipants.get(id);
+  const personName = id === '__local__' ? state.me?.name : who?.name || name;
+  const avatar = id === '__local__' ? state.me?.avatar : who ? avatarOf(who) : '';
+  fillMark(el.querySelector('.tile-avatar'), personName || name, avatar);
   el.querySelector('.tile-name').textContent = isLocal ? `${name} (você)` : name;
+  el.querySelector('.tile-sub').textContent = isLocal ? 'Sua transmissão' : 'Transmitindo a tela';
+  el.setAttribute('aria-label', `Live de ${personName || name}`);
   if (isLocal) el.classList.add('local');
 
   const volume = el.querySelector('.ctl-volume');
@@ -579,11 +792,7 @@ function ensureTile(id, name, isLocal = false) {
     store.set('quality', tile.quality);
     applyQuality(tile);
   });
-  el.querySelector('.ctl-focus').addEventListener('click', () => {
-    state.focus = state.focus === id ? null : id;
-    layout();
-  });
-  el.querySelector('.ctl-full').addEventListener('click', () => toggleFullscreen(el));
+  wireViewControls(tile);
   const pip = el.querySelector('.ctl-pip');
   pip.hidden = !desktop && !pipSupported(tile.video);
   pip.addEventListener('click', () => togglePip(tile));
@@ -601,38 +810,71 @@ function ensureTile(id, name, isLocal = false) {
   tile.video.addEventListener('webkitpresentationmodechanged', () => {
     setPipState(tile, tile.video.webkitPresentationMode === 'picture-in-picture');
   });
-  el.addEventListener('dblclick', (e) => {
-    if (e.target.closest('.tile-controls')) return;
+  el.querySelector('.screen').addEventListener('dblclick', () => {
     if (state.mini === id) setMiniMode(null);
     else toggleFullscreen(el);
   });
 
-  // ✂ Clipar: os últimos 30 s / 1 min / 3 min desta live (gerado no servidor)
+  // Clipar: três durações rápidas + a lista completa (gerado no servidor)
   const clipMenu = el.querySelector('.clip-menu');
   el.querySelector('.ctl-clip').addEventListener('click', (e) => {
     e.stopPropagation();
-    if (clipMenu.hidden) fillClipMenu(clipMenu);
-    clipMenu.hidden = !clipMenu.hidden;
-    el.classList.toggle('clip-open', !clipMenu.hidden);
+    const opening = clipMenu.hidden;
+    closeClipMenus();
+    if (!opening) return;
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    fillClipMenu(clipMenu, tile);
+    clipMenu.hidden = false;
+    el.classList.add('clip-open');
+    clipMenu.querySelector('button')?.focus();
   });
   clipMenu.addEventListener('click', (e) => {
+    e.stopPropagation();
     const seconds = Number(e.target.closest('button')?.dataset.seconds);
     if (!seconds) return;
-    clipMenu.hidden = true;
-    el.classList.remove('clip-open');
+    closeClipMenus();
     // Preview do navegador: a live é publicada com a identidade do próprio usuário
-    createClip(id === '__local__' ? state.me.id : id, seconds);
+    createClip(id === '__local__' ? state.me.id : id, seconds, tile);
   });
-  el.addEventListener('touchstart', () => {
-    el.classList.add('touch');
-    clearTimeout(tile.touchTimer);
-    tile.touchTimer = setTimeout(() => el.classList.remove('touch'), 3500);
-  }, { passive: true });
+  clipMenu.addEventListener('change', (e) => {
+    const seconds = Number(e.target.value);
+    if (!seconds) return;
+    closeClipMenus();
+    createClip(id === '__local__' ? state.me.id : id, seconds, tile);
+  });
 
+  applyVolume(tile);
   state.tiles.set(id, tile);
   $('#stage').append(el);
   layout();
   return tile;
+}
+
+/** Destacar, Teatro e Tela cheia: iguais para lives e para o evento. */
+function wireViewControls(tile) {
+  const { el, id } = tile;
+  el.querySelector('.ctl-focus').addEventListener('click', () => {
+    state.focus = id;
+    if (state.layoutMode === 'split') setLayout('focus');
+    else layout();
+  });
+  el.querySelector('.ctl-theater').addEventListener('click', () => {
+    if (state.layoutMode === 'theater' && mainTileId() === id) {
+      setLayout(state.previousLayout && state.previousLayout !== 'theater' ? state.previousLayout : 'focus');
+    } else {
+      state.focus = id;
+      setLayout('theater');
+    }
+    // Mantém o player à vista depois de trocar o layout
+    const frame = el.getBoundingClientRect();
+    if (frame.top < 0 || frame.bottom > innerHeight) el.scrollIntoView({ block: 'start' });
+  });
+  el.querySelector('.ctl-full').addEventListener('click', () => toggleFullscreen(el));
+}
+
+function closeClipMenus() {
+  for (const menu of document.querySelectorAll('.clip-menu')) menu.hidden = true;
+  for (const t of document.querySelectorAll('.tile.clip-open')) t.classList.remove('clip-open');
 }
 
 function removeTile(id) {
@@ -647,27 +889,63 @@ function removeTile(id) {
   layout();
 }
 
+// Layout da sala: Teatro (padrão), Em destaque ou Lado a lado. A live principal é a
+// destacada (state.focus) ou a primeira que chegou. Os tiles nunca mudam de lugar no
+// DOM (mover um <video> pausa a reprodução): o CSS organiza pela classe do palco.
+const LAYOUTS = ['theater', 'focus', 'split'];
+
+function mainTileId() {
+  if (state.focus && state.tiles.has(state.focus)) return state.focus;
+  return state.tiles.keys().next().value ?? null;
+}
+
+function setLayout(mode) {
+  if (!LAYOUTS.includes(mode)) mode = 'theater';
+  if (mode !== state.layoutMode) state.previousLayout = state.layoutMode;
+  state.layoutMode = mode;
+  layout();
+}
+
 function layout() {
   const stage = $('#stage');
   const count = state.tiles.size;
-  stage.className = `stage count-${Math.min(count, 2)}`;
-  if (state.focus && count > 1) stage.classList.add('focused');
+  const mode = LAYOUTS.includes(state.layoutMode) ? state.layoutMode : (state.layoutMode = store.get('layout', 'theater'));
+  const main = mainTileId();
+  stage.className = `stage ${mode} count-${count === 0 ? '0' : count === 1 ? '1' : 'multi'}`;
   for (const tile of state.tiles.values()) {
-    tile.el.classList.toggle('is-focus', state.focus === tile.id);
+    const isMain = tile.id === main;
+    tile.el.classList.toggle('is-main', isMain);
+    const theater = tile.el.querySelector('.ctl-theater');
+    const on = mode === 'theater' && isMain;
+    theater.setAttribute('aria-pressed', String(on));
+    theater.title = on ? 'Sair do modo Teatro' : 'Modo Teatro';
+    // Destacar só faz sentido com mais de uma live e quando ela não é a principal
+    tile.el.querySelector('.ctl-focus').hidden = count < 2 || (isMain && mode !== 'split');
     applyQuality(tile);
   }
+  // Escolha do layout fica acima dos vídeos quando há mais de uma transmissão
+  $('#layout-switch').hidden = count < 2;
+  for (const b of $('#layout-switch').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.layout === mode));
+}
+
+for (const b of $('#layout-switch').querySelectorAll('button')) {
+  b.addEventListener('click', () => setLayout(b.dataset.layout));
 }
 
 function applyVolume(tile) {
   const mute = tile.el.querySelector('.ctl-mute');
-  mute.textContent = tile.muted || tile.volume === 0 ? '🔇' : '🔊';
+  const silent = tile.muted || tile.volume === 0;
+  setIco(mute, silent ? 'mute' : 'volume');
+  const label = silent ? `Ativar som de ${tile.name}` : `Silenciar ${tile.name}`;
+  mute.title = label;
+  mute.setAttribute('aria-label', label);
   tile.audioTrack?.setVolume(tile.muted ? 0 : tile.volume);
 }
 
 function applyQuality(tile) {
   if (!tile.publication) return;
-  // No modo destaque, a live pequena vai em qualidade menor para economizar banda
-  const minimized = state.focus && state.focus !== tile.id && state.tiles.size > 1;
+  // Ao lado da principal (Em destaque / Teatro), a live vai em qualidade menor para economizar banda
+  const minimized = state.tiles.size > 1 && state.layoutMode !== 'split' && mainTileId() !== tile.id;
   const q = minimized || tile.quality === 'low' ? VideoQuality.LOW : VideoQuality.HIGH;
   tile.publication.setVideoQuality(q);
 }
@@ -821,67 +1099,58 @@ function renderPresence() {
 
   $('#live-count').textContent = `${streamers.length}/${maxStreamers} ao vivo`;
   $('#pill-live').classList.toggle('on', streamers.length > 0);
-  $('#viewer-count').textContent = `${viewers}/${maxViewers}`;
-  $('#people-count').textContent = String(all.length);
+  $('#nav-live').hidden = streamers.length === 0;
+  $('#viewer-count').textContent = `${viewers}/${maxViewers} espectadores`;
+  $('#people-count').textContent = `${all.length} ${all.length === 1 ? 'pessoa' : 'pessoas'}`;
 
+  // Diálogo Transmitir: vagas e estado do botão
   const free = maxStreamers - streamers.length;
   const btn = $('#btn-stream');
+  const full = !state.local && !myAppStream() && free <= 0;
+  $('#broadcast-full').hidden = !full;
+  $('#broadcast-full-text').textContent = `As ${maxStreamers} vagas de transmissão estão ocupadas. Quando uma live terminar, você pode começar a sua.`;
   if (state.local) {
-    btn.textContent = 'Parar transmissão';
-    btn.classList.add('streaming');
-    btn.disabled = false;
-    $('#slots').textContent = 'Você está ao vivo 🔴';
+    $('#btn-stream-text').textContent = 'Você está ao vivo';
+    btn.disabled = true;
+    $('#slots').textContent = 'Para encerrar, use Encerrar live no topo da sala.';
   } else if (myAppStream()) {
     // Transmitindo pelo app desktop e assistindo aqui no navegador
-    btn.textContent = 'Transmitindo pelo app';
-    btn.classList.add('streaming');
+    $('#btn-stream-text').textContent = 'Transmitindo pelo app';
     btn.disabled = true;
-    $('#slots').textContent = 'Você está ao vivo pelo app 🔴 (pare por lá)';
+    $('#slots').textContent = 'Você está ao vivo pelo app. Pare a transmissão por lá.';
   } else {
-    btn.textContent = 'Transmitir minha tela';
-    btn.classList.remove('streaming');
+    $('#btn-stream-text').textContent = state.busy ? 'Começando…' : desktop ? 'Começar live' : 'Escolher tela';
     btn.disabled = state.busy || free <= 0;
     $('#slots').textContent = free > 0
-      ? `${free} vaga${free > 1 ? 's' : ''} para transmitir`
-      : `Sem vagas: já tem ${maxStreamers} pessoas ao vivo`;
+      ? `${free} de ${maxStreamers} vaga${maxStreamers > 1 ? 's' : ''} livre${free > 1 ? 's' : ''} para transmitir.`
+      : '';
   }
+  renderRoomActions();
 
+  // Pessoas na sala: quem transmite primeiro; o nome abre o perfil
   const list = $('#people');
   list.replaceChildren(
     ...all
       .sort((a, b) => Number(isStreaming(b)) - Number(isStreaming(a)))
       .map((p) => {
         const li = document.createElement('li');
-        const avatar = avatarOf(p);
         const name = p.name || p.identity;
-        if (avatar) {
-          const img = document.createElement('img');
-          img.src = avatar;
-          img.alt = '';
-          img.loading = 'lazy';
-          li.append(img);
-        } else {
-          const span = document.createElement('span');
-          span.className = 'avatar';
-          span.textContent = name.slice(0, 1).toUpperCase();
-          li.append(span);
-        }
         const username = usernameOf(p);
-        const label = document.createElement(username ? 'a' : 'span');
+        const row = document.createElement(username ? 'a' : 'div');
+        row.className = 'person';
         if (username) {
-          label.href = profileHref(username);
-          label.dataset.link = '';
-          label.className = 'person-link';
-          label.title = `Perfil de ${name}`;
+          row.href = profileHref(username);
+          row.dataset.link = '';
+          row.title = `Perfil de ${name}`;
         }
-        label.textContent = p === state.room.localParticipant ? `${name} (você)` : name;
-        li.append(label);
-        if (isStreaming(p)) {
-          const tag = document.createElement('span');
-          tag.className = 'tag';
-          tag.textContent = 'AO VIVO';
-          li.append(tag);
-        }
+        const label = document.createElement('strong');
+        label.textContent = name;
+        const status = document.createElement('small');
+        const live = isStreaming(p);
+        status.textContent = live ? 'Ao vivo' : p === state.room.localParticipant ? 'Você' : 'Assistindo';
+        if (live) status.className = 'live-text';
+        row.append(makeAvatar(name, avatarOf(p)), label, status);
+        li.append(row);
         return li;
       }),
   );
@@ -889,11 +1158,12 @@ function renderPresence() {
 
 // ---------------- transmitir ----------------
 
-$('#btn-stream').addEventListener('click', () => (state.local ? stopStream() : startStream()));
 $('#opt-quality').value = store.get('stream-quality', '1080p30');
 $('#opt-content').value = store.get('stream-content', 'motion');
+$('#opt-audio').checked = store.get('stream-audio', '1') === '1';
 $('#opt-quality').addEventListener('change', (e) => store.set('stream-quality', e.target.value));
 $('#opt-content').addEventListener('change', (e) => store.set('stream-content', e.target.value));
+$('#broadcast-source').replaceChildren(ico('room'), 'Transmitindo pelo navegador');
 
 function waitForPublishPermission(timeoutMs = 6000) {
   const lp = state.room.localParticipant;
@@ -999,7 +1269,10 @@ async function startStream() {
     tile.video.srcObject = new MediaStream([video]);
     tile.el.classList.add('has-video');
     updateResolution(tile);
-    toast('Você está ao vivo! 🔴');
+    $('#dlg-broadcast').close();
+    state.focus = '__local__';
+    layout();
+    toast('Você está ao vivo.');
   } catch (err) {
     stream.getTracks().forEach((t) => t.stop());
     await unpublishScreen();
@@ -1045,9 +1318,11 @@ async function stopStream() {
 
 // ---------------- clipes ----------------
 
-document.addEventListener('click', () => {
-  for (const menu of document.querySelectorAll('.clip-menu')) menu.hidden = true;
-  for (const tile of document.querySelectorAll('.tile.clip-open')) tile.classList.remove('clip-open');
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.clip-menu')) closeClipMenus();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.querySelector('.clip-menu:not([hidden])')) closeClipMenus();
 });
 
 let clipsTimer = null;
@@ -1056,12 +1331,12 @@ const lengthLabel = (seconds) => {
   return m ? (s ? `${m} min ${s} s` : `${m} min`) : `${s} s`;
 };
 
-async function createClip(streamer, seconds) {
-  toast(`✂ Gerando clipe dos últimos ${lengthLabel(seconds)}…`);
+async function createClip(streamer, seconds, tile = null) {
+  toast(`Gerando clipe dos últimos ${lengthLabel(seconds)}…`);
   try {
     const clip = await api(ch('/clips'), { method: 'POST', body: { streamer, seconds } });
     loadClips();
-    openClipDialog(clip);
+    openClipDialog(clip, tile);
     return clip;
   } catch (err) {
     toast(err.message, true);
@@ -1070,8 +1345,13 @@ async function createClip(streamer, seconds) {
 
 // Depois de clipar: título e descrição (opcionais). Publicar/Pular manda o link pro Discord.
 let editingClip = null;
-function openClipDialog(clip) {
+function openClipDialog(clip, tile = null) {
   editingClip = clip;
+  $('#clip-dialog-title').textContent = 'Clipe pronto';
+  $('#clip-submit').querySelector('span').textContent = 'Publicar';
+  $('#clip-skip').textContent = 'Pular';
+  const from = tile?.name || clip.streamer?.name;
+  $('#clip-dialog-source').textContent = `${from ? `Live de ${from} · ` : ''}${lengthLabel(clip.seconds)}`;
   $('#clip-preview').src = clip.url;
   $('#clip-title').value = clip.title || '';
   $('#clip-description').value = clip.description || '';
@@ -1094,8 +1374,8 @@ async function finishClipDialog(withDetails) {
   }
   try {
     const saved = await api(`/api/clips/${clip.id}`, { method: 'PATCH', body });
-    const tagged = saved.mentions.length ? ` • ${saved.mentions.length} marcado(s)` : '';
-    toast(`Clipe publicado!${tagged}`);
+    const tagged = saved.mentions.length ? ` ${saved.mentions.length} ${saved.mentions.length === 1 ? 'pessoa marcada' : 'pessoas marcadas'}.` : '';
+    toast(`Clipe publicado.${tagged}`);
     loadClips();
   } catch (err) {
     toast(err.message, true);
@@ -1127,13 +1407,18 @@ function timeLeft(expiresAt) {
   return h >= 1 ? `some em ${Math.floor(h)} h` : `some em ${Math.max(1, Math.round(h * 60))} min`;
 }
 
+const timestamp = (seconds) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+
 async function loadClips() {
   if (!state.me || !state.channel) return;
+  const channelId = state.channel.id;
   try {
     const { clips } = await api(ch('/clips'));
+    if (state.channel?.id !== channelId) return;
     clipsView.clips = clips;
     renderClipsPanel(clips);
-    if ($('#dlg-clips').open) renderClipsDialog();
+    renderClipShelf();
+    if (!$('#view-clips').hidden) renderClipsPage();
   } catch (err) {
     console.warn('[clipes]', err); // sem clipes por enquanto
   }
@@ -1172,156 +1457,61 @@ function personLink(person) {
   return a;
 }
 
-function clipCard(clip, options) {
-  const li = document.createElement('li');
-  li.className = 'clip';
+const clipName = (clip) => clip.title || `Live de ${clip.streamer.name}`;
+const clipHref = (clip) => `/c/${clip.channel?.id || state.channel?.id}/clipes/${clip.id}`;
 
-  const video = document.createElement('video');
-  video.src = clip.url;
-  video.preload = 'metadata';
-  video.controls = true;
-  video.playsInline = true;
-
-  li.append(video, ...clipDetails(clip, options));
-  return li;
-}
-
-/** Título, descrição, informações e botões (copiar, baixar, editar, salvar, excluir). */
-function clipDetails(clip, { onChange, showChannel = false }) {
-  const meta = document.createElement('div');
-  meta.className = 'clip-meta';
-  const title = document.createElement('div');
-  title.className = 'clip-title';
-  if (clip.title) title.append(withMentions(clip.title, clip.mentions));
-  else title.append('Live de ', personLink(clip.streamer));
-  meta.append(title);
-
-  if (clip.description) {
-    const desc = document.createElement('div');
-    desc.className = 'clip-desc';
-    desc.append(withMentions(clip.description, clip.mentions));
-    meta.append(desc);
-  }
-
-  const info = document.createElement('div');
-  info.className = 'muted';
-  if (clip.title) info.append('live de ', personLink(clip.streamer), ' • ');
-  info.append(`${lengthLabel(clip.seconds)} • por `, personLink(clip.creator));
-  info.append(` • ${timeAgo(clip.createdAt)} • ${clip.saved ? 'salvo ⭐' : timeLeft(clip.expiresAt)}`);
-  if (showChannel && clip.channel) info.append(` • ${clip.channel.name}`);
-  meta.append(info);
-
-  const actions = document.createElement('div');
-  actions.className = 'clip-actions';
-  const link = `${location.origin}${clip.page}`;
-
-  const copy = document.createElement('button');
-  copy.textContent = '🔗 Copiar link';
-  copy.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(link);
-      toast('Link copiado! Cole no Discord.');
-    } catch {
-      prompt('Copie o link do clipe:', link);
-    }
-  });
-
-  const download = document.createElement('a');
-  download.textContent = '⬇ Baixar';
-  download.href = clip.url;
-  download.download = `faz-o-l-${clip.id}.${clip.mime.includes('mp4') ? 'mp4' : 'webm'}`;
-  actions.append(copy, download);
-
-  if (clip.mine) {
-    const edit = document.createElement('button');
-    edit.textContent = '✏ Editar';
-    edit.title = 'Título, descrição e marcações';
-    edit.addEventListener('click', () => openEditDialog(clip, onChange));
-    actions.append(edit);
-  }
-  // Salvar: qualquer pessoa do canal. Tirar dos salvos: quem salvou, quem clipou ou o dono.
-  if (clip.canSave ?? clip.mine) {
-    const save = document.createElement('button');
-    const savedBy = clip.savedBy ? `Salvo por ${clip.savedBy}` : 'Salvo';
-    save.textContent = clip.saved ? '⭐ Salvo' : '☆ Salvar';
-    save.className = clip.saved ? 'saved' : '';
-    save.disabled = clip.saved && clip.canUnsave === false;
-    save.title = !clip.saved ? 'Guardar pra sempre (senão expira em 24 h)'
-      : save.disabled ? savedBy : `${savedBy}. Clique pra deixar expirar em 24 h`;
-    save.addEventListener('click', async () => {
-      try {
-        await api(`/api/clips/${clip.id}`, { method: 'PATCH', body: { saved: !clip.saved } });
-        onChange?.();
-      } catch (err) {
-        toast(err.message, true);
-      }
-    });
-    actions.append(save);
-  }
-  if (clip.canDelete) {
-    const del = document.createElement('button');
-    del.textContent = '🗑';
-    del.title = 'Excluir clipe';
-    del.className = 'danger';
-    del.addEventListener('click', async () => {
-      if (!confirm('Excluir este clipe? Não dá pra desfazer.')) return;
-      try {
-        await api(`/api/clips/${clip.id}`, { method: 'DELETE' });
-        onChange?.();
-      } catch (err) {
-        toast(err.message, true);
-      }
-    });
-    actions.append(del);
-  }
-
-  return [meta, actions];
-}
-
-// ---------------- janela de clipes (player grande + lista) ----------------
-
-const clipsView = { clips: [], selected: null, filter: 'all' };
-
-function clipThumb(clip) {
+/** Card da biblioteca: miniatura (primeiro quadro), duração, título e autoria. */
+function clipCard(clip, { showChannel = false } = {}) {
+  const a = document.createElement('a');
+  a.className = 'clip-card';
+  a.href = clipHref(clip);
+  a.dataset.link = '';
   const thumb = document.createElement('div');
-  thumb.className = 'clip-thumb';
+  thumb.className = 'thumb';
   const video = document.createElement('video');
-  video.src = `${clip.url}#t=0.5`; // primeiro quadro como miniatura
+  video.src = `${clip.url}#t=0.5`;
   video.preload = 'metadata';
   video.muted = true;
   video.playsInline = true;
   const len = document.createElement('span');
-  len.className = 'clip-len';
-  len.textContent = lengthLabel(clip.seconds);
+  len.className = 'duration';
+  len.textContent = timestamp(clip.seconds);
   thumb.append(video, len);
-  return thumb;
+  if (clip.saved) {
+    const badge = document.createElement('span');
+    badge.className = 'saved-badge';
+    badge.title = 'Salvo';
+    badge.append(ico('bookmark'));
+    thumb.append(badge);
+  }
+  const info = document.createElement('span');
+  info.className = 'clip-info';
+  const title = document.createElement('strong');
+  title.textContent = clipName(clip);
+  const meta = document.createElement('small');
+  const parts = [clip.streamer.name, timeAgo(clip.createdAt)];
+  if (showChannel && clip.channel) parts.push(clip.channel.name);
+  meta.textContent = parts.join(' · ');
+  info.append(title, meta);
+  a.append(thumb, info);
+  return a;
 }
 
-function clipRow(clip, onClick) {
-  const li = document.createElement('li');
-  li.className = 'clip-row';
-  li.tabIndex = 0;
-  const text = document.createElement('div');
-  text.className = 'clip-row-text';
-  const title = document.createElement('div');
-  title.className = 'clip-title';
-  title.textContent = clip.title || `Live de ${clip.streamer.name}`;
-  const info = document.createElement('div');
-  info.className = 'muted';
-  info.textContent = `${clip.title ? `${clip.streamer.name} • ` : ''}por ${clip.creator.name} • ${timeAgo(clip.createdAt)}${clip.saved ? ' • ⭐' : ''}`;
-  text.append(title, info);
-  li.append(clipThumb(clip), text);
-  li.addEventListener('click', onClick);
-  li.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') onClick();
-  });
-  return li;
-}
-
-/** Contador de clipes no ícone ✂ da barra da esquerda (que abre a janela de clipes). */
+/** Contador de clipes no item Clipes da barra lateral. */
 function renderClipsPanel(clips) {
   $('#clips-count').textContent = clips.length ? String(clips.length) : '';
 }
+
+/** Clipes recentes abaixo da sala. */
+function renderClipShelf() {
+  const recent = clipsView.clips.slice(0, 3);
+  $('#clip-shelf').hidden = !recent.length;
+  $('#shelf-grid').replaceChildren(...recent.map((c) => clipCard(c)));
+}
+
+// ---------------- biblioteca de clipes (tela própria) ----------------
+
+const clipsView = { clips: [], selected: null, filter: 'all' };
 
 function filteredClips() {
   const { clips, filter } = clipsView;
@@ -1330,80 +1520,152 @@ function filteredClips() {
   return clips;
 }
 
-function selectClip(id, { autoplay = true } = {}) {
-  const clip = clipsView.clips.find((c) => c.id === id);
-  const player = $('#clips-player');
-  const info = $('#clips-player-info');
-  clipsView.selected = clip?.id || null;
-  for (const row of $('#clips-modal-list').children) row.classList.toggle('active', row.dataset.id === clipsView.selected);
-  if (!clip) {
-    player.removeAttribute('src');
-    player.load();
-    info.replaceChildren();
-    return;
-  }
-  if (player.dataset.clip !== clip.id) {
-    player.dataset.clip = clip.id;
-    player.src = clip.url;
-    if (autoplay) player.play().catch(() => {});
-  }
-  info.replaceChildren(...clipDetails(clip, { onChange: loadClips }));
+async function showClipsPage(channelId, clipId) {
+  if (!(await loadChannel(channelId))) return;
+  clipsView.selected = clipId;
+  document.title = `Clipes • ${state.channel.name} • Faz o L`;
+  show('view-clips');
+  $('#clips-channel').textContent = state.channel.name;
+  $('#clip-back').href = `/c/${channelId}/clipes`;
+  renderClipsPage();
+  if (!clipsView.clips.length) loadClips();
 }
 
-function renderClipsDialog() {
+function renderClipsPage() {
+  const detail = clipsView.selected;
+  $('#clips-list-view').hidden = !!detail;
+  $('#clip-detail').hidden = !detail;
+  if (detail) return renderClipDetail();
+  $('#clip-player').pause();
+  for (const b of $('#clips-filter').children) b.setAttribute('aria-pressed', String(b.dataset.filter === clipsView.filter));
   const clips = filteredClips();
-  $('#clips-modal-count').textContent = `(${clips.length})`;
-  for (const b of $('#clips-filter').children) b.classList.toggle('active', b.dataset.filter === clipsView.filter);
-  const list = $('#clips-modal-list');
-  if (!clips.length) {
-    const li = document.createElement('li');
-    li.className = 'empty-clips';
-    li.textContent = clipsView.filter === 'all' ? 'Nenhum clipe ainda.' : 'Nenhum clipe aqui.';
-    list.replaceChildren(li);
-  } else {
-    list.replaceChildren(
-      ...clips.map((clip) => {
-        const row = clipRow(clip, () => selectClip(clip.id));
-        row.dataset.id = clip.id;
-        return row;
-      }),
-    );
-  }
-  const keep = clips.some((c) => c.id === clipsView.selected) ? clipsView.selected : clips[0]?.id;
-  selectClip(keep, { autoplay: false });
+  $('#clips-grid').replaceChildren(...clips.map((c) => clipCard(c)));
+  $('#clips-grid').hidden = !clips.length;
+  $('#clips-empty').hidden = clips.length > 0;
+  $('#clips-empty-text').textContent = {
+    all: 'Clipe um momento de uma live e ele aparece aqui. Clipes não salvos somem em 24 h.',
+    mine: 'Os clipes que você fizer aparecem aqui.',
+    saved: 'Salve um clipe para ele não sumir em 24 h.',
+  }[clipsView.filter];
 }
 
-function openClipsDialog(id = null) {
-  if (id) {
-    clipsView.selected = id;
-    if (!filteredClips().some((c) => c.id === id)) clipsView.filter = 'all';
-  }
-  renderClipsDialog();
-  $('#dlg-clips').showModal();
-  if (id) $('#clips-player').play().catch(() => {});
-}
-
-$('#clips-close').addEventListener('click', () => $('#dlg-clips').close());
-$('#dlg-clips').addEventListener('close', () => $('#clips-player').pause());
-$('#dlg-clips').addEventListener('click', (e) => {
-  if (e.target === e.currentTarget) e.currentTarget.close(); // clique fora fecha
-});
 $('#clips-filter').addEventListener('click', (e) => {
   const filter = e.target.closest('button')?.dataset.filter;
   if (!filter) return;
   clipsView.filter = filter;
-  renderClipsDialog();
+  renderClipsPage();
 });
 
-function renderClipList(list, clips, options) {
-  if (!clips.length) {
-    const li = document.createElement('li');
-    li.className = 'empty-clips';
-    li.textContent = options.empty;
-    list.replaceChildren(li);
+/** Detalhe: reprodução, autoria, descrição, menções e ações. */
+function renderClipDetail() {
+  const clip = clipsView.clips.find((c) => c.id === clipsView.selected);
+  const player = $('#clip-player');
+  if (!clip) {
+    player.removeAttribute('src');
+    $('#clip-detail-title').textContent = clipsView.clips.length ? 'Clipe indisponível' : 'Carregando…';
+    $('#clip-detail-meta').textContent = clipsView.clips.length ? 'Este clipe pode ter sido removido ou expirado (clipes não salvos somem em 24 h).' : '';
+    for (const id of ['#clip-detail-desc', '#clip-detail-tags']) $(id).hidden = true;
+    $('#clip-detail-actions').replaceChildren();
+    $('#clip-detail-expiry').textContent = '';
     return;
   }
-  list.replaceChildren(...clips.map((clip) => clipCard(clip, options)));
+  document.title = `${clipName(clip)} • Faz o L`;
+  if (player.dataset.clip !== clip.id) {
+    player.dataset.clip = clip.id;
+    player.src = clip.url;
+    player.play().catch(() => {});
+  }
+  const title = $('#clip-detail-title');
+  title.replaceChildren();
+  if (clip.title) title.append(withMentions(clip.title, clip.mentions));
+  else title.append('Live de ', personLink(clip.streamer));
+
+  const meta = $('#clip-detail-meta');
+  meta.replaceChildren('Live de ', personLink(clip.streamer), ` · ${lengthLabel(clip.seconds)} · por `, personLink(clip.creator), ` · ${timeAgo(clip.createdAt)}`);
+
+  const desc = $('#clip-detail-desc');
+  desc.hidden = !clip.description;
+  desc.replaceChildren();
+  if (clip.description) desc.append(withMentions(clip.description, clip.mentions));
+
+  const tags = $('#clip-detail-tags');
+  tags.hidden = !clip.mentions.length;
+  tags.replaceChildren(...clip.mentions.filter((u) => u.username).map((u) => {
+    const a = document.createElement('a');
+    a.className = 'button ghost';
+    a.href = profileHref(u.username);
+    a.dataset.link = '';
+    a.title = `Perfil de ${u.name}`;
+    a.textContent = `@${u.username}`;
+    return a;
+  }));
+
+  $('#clip-detail-actions').replaceChildren(...clipActions(clip, { onChange: loadClips }));
+  $('#clip-detail-expiry').textContent = clip.saved
+    ? (clip.savedBy ? `Salvo por ${clip.savedBy}. Não expira.` : 'Salvo. Não expira.')
+    : `Clipes não salvos expiram em 24 h: este ${timeLeft(clip.expiresAt)}.`;
+}
+
+/** Copiar link, baixar, editar, salvar e excluir. */
+function clipActions(clip, { onChange, afterDelete } = {}) {
+  const actions = [];
+  const link = `${location.origin}${clip.page}`;
+
+  const copy = makeButton('Copiar link', 'link');
+  copy.addEventListener('click', () => copyText(link, 'Link copiado. Cole no Discord.'));
+  actions.push(copy);
+
+  const download = document.createElement('a');
+  download.className = 'button';
+  download.append(ico('download'), 'Baixar');
+  download.href = clip.url;
+  download.download = `faz-o-l-${clip.id}.${clip.mime.includes('mp4') ? 'mp4' : 'webm'}`;
+  actions.push(download);
+
+  if (clip.mine) {
+    const edit = makeButton('Editar', 'settings');
+    edit.title = 'Título, descrição e marcações';
+    edit.addEventListener('click', () => openEditDialog(clip, onChange));
+    actions.push(edit);
+  }
+  // Salvar: qualquer pessoa do canal. Tirar dos salvos: quem salvou, quem clipou ou o dono.
+  if (clip.canSave ?? clip.mine) {
+    const save = makeButton(clip.saved ? 'Salvo' : 'Salvar', 'bookmark', clip.saved ? 'saved' : '');
+    const savedBy = clip.savedBy ? `Salvo por ${clip.savedBy}` : 'Salvo';
+    save.disabled = clip.saved && clip.canUnsave === false;
+    save.title = !clip.saved ? 'Guardar pra sempre (senão expira em 24 h)'
+      : save.disabled ? savedBy : `${savedBy}. Clique pra deixar expirar em 24 h`;
+    save.addEventListener('click', async () => {
+      try {
+        await api(`/api/clips/${clip.id}`, { method: 'PATCH', body: { saved: !clip.saved } });
+        toast(clip.saved ? 'Clipe removido dos salvos.' : 'Clipe salvo.');
+        onChange?.();
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
+    actions.push(save);
+  }
+  if (clip.canDelete) {
+    const del = makeButton('Excluir', 'trash', 'danger');
+    del.addEventListener('click', async () => {
+      const ok = await confirmAction('Excluir clipe?', `“${clipName(clip)}” será removido da biblioteca do canal. Não dá pra desfazer.`, 'Excluir clipe');
+      if (!ok) return;
+      try {
+        await api(`/api/clips/${clip.id}`, { method: 'DELETE' });
+        toast('Clipe excluído.');
+        if (afterDelete) afterDelete();
+        else {
+          await loadClips();
+          navigate(`/c/${state.channel.id}/clipes`, { replace: true });
+        }
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
+    actions.push(del);
+  }
+  return actions;
 }
 
 // Editar um clipe já publicado (o Discord não recebe de novo)
@@ -1413,6 +1675,10 @@ function openEditDialog(clip, onChange) {
   editDone = { clip, onChange };
   // No perfil, o clipe pode ser de outro canal: o @ sugere os membros de lá
   state.mentionChannel = clip.channel && clip.channel.id !== state.channel?.id ? clip.channel.id : null;
+  $('#clip-dialog-title').textContent = 'Editar clipe';
+  $('#clip-dialog-source').textContent = `Live de ${clip.streamer.name} · ${lengthLabel(clip.seconds)}`;
+  $('#clip-submit').querySelector('span').textContent = 'Salvar';
+  $('#clip-skip').textContent = 'Cancelar';
   $('#clip-preview').src = clip.url;
   $('#clip-title').value = clip.title || '';
   $('#clip-description').value = clip.description || '';
@@ -1436,6 +1702,7 @@ async function saveEdit() {
 $('#dlg-clip').addEventListener('close', () => {
   editDone = null;
   state.mentionChannel = null;
+  $('#clip-preview').pause();
   hideMentionBox();
 });
 
@@ -1564,26 +1831,26 @@ let profileData = null;
 let profileTab = 'streamed';
 
 async function showProfile(username) {
+  state.profileUser = username;
   show('view-profile');
-  $('#profile-back').href = state.channel ? `/c/${state.channel.id}` : '/';
-  $('#profile-back').textContent = !state.room ? '← Voltar'
-    : state.local || myAppStream() ? '← Voltar pra sala (você está ao vivo)' : '← Voltar pra sala';
   $('#profile-name').textContent = 'Carregando…';
   $('#profile-username').textContent = `@${username}`;
   $('#profile-channels').textContent = '';
+  $('#btn-logout-profile').hidden = username !== state.me.username;
+  fillMark($('#profile-avatar'), username, '');
   $('#profile-clips').replaceChildren();
+  $('#profile-empty').hidden = true;
   try {
     profileData = await api(`/api/users/${encodeURIComponent(username)}`);
   } catch (err) {
-    $('#profile-name').textContent = 'Perfil não encontrado';
+    $('#profile-name').textContent = 'Perfil indisponível';
     $('#profile-channels').textContent = err.message;
     return;
   }
   const { user, channels } = profileData;
   document.title = `${user.name} • Faz o L`;
   $('#profile-name').textContent = user.name;
-  $('#profile-avatar').src = user.avatar || '';
-  $('#profile-avatar').hidden = !user.avatar;
+  fillMark($('#profile-avatar'), user.name, user.avatar);
   $('#profile-channels').textContent = channels.length ? `Canais em comum: ${channels.map((c) => c.name).join(', ')}` : '';
   $('#count-streamed').textContent = `(${profileData.streamed.length})`;
   $('#count-tagged').textContent = `(${profileData.tagged.length})`;
@@ -1591,36 +1858,122 @@ async function showProfile(username) {
 }
 
 function renderProfileTab() {
-  for (const tab of document.querySelectorAll('.tab')) tab.classList.toggle('active', tab.dataset.tab === profileTab);
+  for (const tab of $('#profile-tabs').children) tab.setAttribute('aria-pressed', String(tab.dataset.tab === profileTab));
   const me = profileData.me;
-  const empty = profileTab === 'streamed'
+  const clips = profileData[profileTab];
+  $('#profile-empty-text').textContent = profileTab === 'streamed'
     ? (me ? 'Ninguém clipou suas lives ainda.' : 'Ninguém clipou as lives dessa pessoa ainda.')
     : (me ? 'Ninguém te marcou em clipes ainda.' : 'Essa pessoa ainda não foi marcada em clipes.');
-  renderClipList($('#profile-clips'), profileData[profileTab], {
-    empty,
-    showChannel: true,
-    onChange: () => showProfile(profileData.user.username),
-  });
+  $('#profile-empty').hidden = clips.length > 0;
+  $('#profile-clips').hidden = !clips.length;
+  $('#profile-clips').replaceChildren(...clips.map((c) => clipCard(c, { showChannel: true })));
 }
 
-for (const tab of document.querySelectorAll('.tab')) {
-  tab.addEventListener('click', () => {
-    profileTab = tab.dataset.tab;
-    if (profileData) renderProfileTab();
-  });
+$('#profile-tabs').addEventListener('click', (e) => {
+  const tab = e.target.closest('button')?.dataset.tab;
+  if (!tab) return;
+  profileTab = tab;
+  if (profileData) renderProfileTab();
+});
+
+// ---------------- configurações (um único lugar) ----------------
+// A engrenagem abre o mesmo painel em qualquer tela e lembra a última seção.
+
+const SETTINGS_SECTIONS = ['appearance', 'watch', 'broadcast', 'clips', 'desktop', 'channel'];
+let settingsSection = 'appearance';
+
+function openSettings(section = settingsSection) {
+  showSettingsSection(section);
+  const dlg = $('#dlg-settings');
+  if (!dlg.open) dlg.showModal();
 }
 
-// ---------------- gerenciar canal (dono) ----------------
+function showSettingsSection(section) {
+  if (!SETTINGS_SECTIONS.includes(section)) section = 'appearance';
+  if (section === 'channel' && !state.channel) section = 'appearance';
+  settingsSection = section;
+  for (const b of document.querySelectorAll('.settings-nav [data-section]')) {
+    if (b.dataset.section === section) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  }
+  for (const s of document.querySelectorAll('.settings-content > [data-section]')) s.classList.toggle('active', s.dataset.section === section);
+  $('.settings-content').scrollTop = 0;
+  ({
+    appearance: () => { $('#set-theme').value = store.get('theme', 'dark'); },
+    watch: () => {
+      $('#set-layout').value = store.get('layout', 'theater');
+      $('#set-watch-quality').value = store.get('quality', 'high');
+    },
+    broadcast: () => {
+      $('#set-stream-quality').replaceChildren(...[...$('#opt-quality').options].map((o) => new Option(o.textContent, o.value)));
+      $('#set-stream-quality').value = $('#opt-quality').value;
+      $('#set-stream-content').value = $('#opt-content').value;
+      $('#set-stream-audio').checked = store.get('stream-audio', '1') === '1';
+    },
+    clips: () => renderClipSettings(),
+    desktop: () => renderClipSettings(),
+    channel: () => openManage(),
+  })[section]();
+}
 
-$('#btn-manage').addEventListener('click', openManage);
-$('#manage-close').addEventListener('click', () => $('#dlg-manage').close());
+$('#btn-settings').addEventListener('click', () => openSettings());
+$('#settings-close').addEventListener('click', () => $('#dlg-settings').close());
+$('#settings-done').addEventListener('click', () => $('#dlg-settings').close());
+$('.settings-nav').addEventListener('click', (e) => {
+  const section = e.target.closest('[data-section]')?.dataset.section;
+  if (section) showSettingsSection(section);
+});
+
+$('#set-theme').addEventListener('change', (e) => {
+  store.set('theme', e.target.value);
+  applyTheme();
+  toast('Tema salvo.');
+});
+$('#set-layout').addEventListener('change', (e) => {
+  store.set('layout', e.target.value);
+  if (state.room) setLayout(e.target.value);
+  toast('Layout padrão salvo.');
+});
+$('#set-watch-quality').addEventListener('change', (e) => {
+  store.set('quality', e.target.value);
+  for (const tile of state.tiles.values()) {
+    if (tile.isLocal || tile.isEvent) continue;
+    tile.quality = e.target.value;
+    tile.el.querySelector('.ctl-quality').value = tile.quality;
+    applyQuality(tile);
+  }
+  toast('Qualidade ao assistir salva.');
+});
+$('#set-stream-quality').addEventListener('change', (e) => {
+  $('#opt-quality').value = e.target.value;
+  $('#opt-quality').dispatchEvent(new Event('change'));
+  toast('Qualidade padrão salva.');
+});
+$('#set-stream-content').addEventListener('change', (e) => {
+  $('#opt-content').value = e.target.value;
+  $('#opt-content').dispatchEvent(new Event('change'));
+  toast('Tipo de conteúdo salvo.');
+});
+$('#set-stream-audio').addEventListener('change', (e) => {
+  store.set('stream-audio', e.target.checked ? '1' : '0');
+  $('#opt-audio').checked = e.target.checked;
+  toast('Áudio padrão salvo.');
+});
+
+// ---------------- canal: convites, avisos e membros ----------------
 
 async function openManage() {
-  $('#manage-name').textContent = state.channel.name;
-  $('#dlg-manage').showModal();
-  loadInvites();
+  const c = state.channel;
+  if (!c) return;
+  const owner = c.role === 'owner';
+  $('#manage-name').textContent = c.name;
+  $('#manage-role').textContent = owner ? 'Você é dono deste canal.' : 'O dono do canal gerencia convites, avisos e membros.';
+  $('#manage-owner').hidden = !owner;
+  if (owner) {
+    loadInvites();
+    loadDiscordChannels();
+  }
   loadMembers();
-  loadDiscordChannels();
 }
 
 async function loadInvites() {
@@ -1628,7 +1981,10 @@ async function loadInvites() {
     const { invites } = await api(ch('/invites'));
     const list = $('#invite-list');
     if (!invites.length) {
-      list.innerHTML = '<li class="muted">Nenhum convite ativo.</li>';
+      const li = document.createElement('li');
+      li.className = 'empty';
+      li.textContent = 'Nenhum convite ativo.';
+      list.replaceChildren(li);
       return;
     }
     list.replaceChildren(
@@ -1638,25 +1994,20 @@ async function loadInvites() {
         text.className = 'grow';
         const expires = inv.expiresAt ? `expira ${new Date(inv.expiresAt).toLocaleDateString('pt-BR')}` : 'não expira';
         const uses = inv.maxUses ? `${inv.uses}/${inv.maxUses} usos` : `${inv.uses} usos`;
-        text.textContent = `${inv.url.replace(/^https?:\/\//, '')} • ${expires} • ${uses}`;
-        const copy = document.createElement('button');
-        copy.textContent = 'Copiar';
-        copy.addEventListener('click', async () => {
-          try {
-            await navigator.clipboard.writeText(inv.url);
-            toast('Link de convite copiado!');
-          } catch {
-            prompt('Copie o convite:', inv.url);
-          }
-        });
-        const revoke = document.createElement('button');
-        revoke.textContent = 'Revogar';
-        revoke.className = 'danger';
+        text.textContent = `${inv.url.replace(/^https?:\/\//, '')} · ${expires} · ${uses}`;
+        text.title = inv.url;
+        const actions = document.createElement('div');
+        actions.className = 'button-row';
+        const copy = makeIconButton('Copiar convite', 'link', '');
+        copy.addEventListener('click', () => copyText(inv.url, 'Link de convite copiado.'));
+        const revoke = makeIconButton('Revogar convite', 'trash', '');
         revoke.addEventListener('click', async () => {
-          await api(ch(`/invites/${inv.code}`), { method: 'DELETE' }).catch((err) => toast(err.message, true));
+          if (!(await confirmAction('Revogar convite?', `O acesso pelo link ${inv.url.replace(/^https?:\/\//, '')} será desativado.`, 'Revogar convite'))) return;
+          await api(ch(`/invites/${inv.code}`), { method: 'DELETE' }).then(() => toast('Convite revogado.'), (err) => toast(err.message, true));
           loadInvites();
         });
-        li.append(text, copy, revoke);
+        actions.append(copy, revoke);
+        li.append(text, actions);
         return li;
       }),
     );
@@ -1672,7 +2023,7 @@ $('#btn-invite').addEventListener('click', async () => {
       body: { days: Number($('#invite-days').value), maxUses: Number($('#invite-uses').value) || null },
     });
     await navigator.clipboard.writeText(invite.url).then(
-      () => toast('Convite criado e copiado! Cole no Discord.'),
+      () => toast('Convite criado e copiado. Cole no Discord.'),
       () => toast('Convite criado.'),
     );
     loadInvites();
@@ -1684,32 +2035,26 @@ $('#btn-invite').addEventListener('click', async () => {
 async function loadMembers() {
   state.members = null;
   const members = await channelMembers();
+  const owner = state.channel?.role === 'owner';
   $('#members-count').textContent = `(${members.length})`;
   $('#member-list').replaceChildren(
     ...members.map((m) => {
       const li = document.createElement('li');
-      if (m.avatar) {
-        const img = document.createElement('img');
-        img.src = m.avatar;
-        img.alt = '';
-        li.append(img);
-      } else {
-        const span = document.createElement('span');
-        span.className = 'avatar';
-        span.textContent = m.name.slice(0, 1).toUpperCase();
-        li.append(span);
-      }
-      const name = document.createElement('span');
-      name.className = 'grow';
-      name.textContent = `${m.name}${m.username ? ` (@${m.username})` : ''}${m.role === 'owner' ? ' • dono' : ''}`;
-      li.append(name);
-      if (m.role !== 'owner') {
-        const remove = document.createElement('button');
-        remove.textContent = 'Remover';
-        remove.className = 'danger';
+      const who = document.createElement('div');
+      who.className = 'identity';
+      const text = document.createElement('div');
+      const name = document.createElement('strong');
+      name.textContent = m.name;
+      const handle = document.createElement('small');
+      handle.textContent = `${m.username ? `@${m.username}` : 'convidado'}${m.role === 'owner' ? ' · Dono' : ''}`;
+      text.append(name, handle);
+      who.append(makeAvatar(m.name, m.avatar), text);
+      li.append(who);
+      if (owner && m.role !== 'owner') {
+        const remove = makeButton('Remover', '', 'ghost');
         remove.addEventListener('click', async () => {
-          if (!confirm(`Remover ${m.name} do canal? A pessoa só volta com um convite novo.`)) return;
-          await api(ch(`/members/${m.id}`), { method: 'DELETE' }).catch((err) => toast(err.message, true));
+          if (!(await confirmAction(`Remover ${m.name}?`, `${m.name} perderá o acesso a este canal e só volta com um convite novo.`, 'Remover membro'))) return;
+          await api(ch(`/members/${m.id}`), { method: 'DELETE' }).then(() => toast('Membro removido.'), (err) => toast(err.message, true));
           loadMembers();
         });
         li.append(remove);
@@ -1728,7 +2073,7 @@ async function loadDiscordChannels() {
       new Option(none, ''),
       ...data.textChannels.map((c) => new Option(`#${c.name}`, c.id, false, c.id === selected)),
     ];
-    notify.replaceChildren(...options(data.notifyChannelId, 'Não avisar'));
+    notify.replaceChildren(...options(data.notifyChannelId, 'Desativado'));
     clips.replaceChildren(...options(data.clipsChannelId, 'Mesmo canal dos avisos'));
     notify.value = data.notifyChannelId;
     clips.value = data.clipsChannelId;
@@ -1744,7 +2089,7 @@ for (const select of [$('#discord-notify'), $('#discord-clips')]) {
         method: 'PUT',
         body: { notifyChannelId: $('#discord-notify').value, clipsChannelId: $('#discord-clips').value },
       });
-      toast('Canais do Discord salvos.');
+      toast('Avisos do Discord salvos.');
     } catch (err) {
       toast(err.message, true);
     }
@@ -1825,12 +2170,14 @@ async function setupDesktop() {
   document.body.classList.add('is-desktop');
   $('#desktop-opts').hidden = false;
   $('#browser-audio-hint').hidden = true;
+  $('#desktop-promo').hidden = true;
+  $('#broadcast-source').replaceChildren(ico('windows'), 'App Windows · captura pela GPU');
   $('#opt-quality').innerHTML = `
-    <option value="1440p60">1440p • 60 fps (rede forte)</option>
-    <option value="1080p60">1080p • 60 fps (recomendado)</option>
-    <option value="1080p30">1080p • 30 fps</option>
-    <option value="720p60">720p • 60 fps</option>
-    <option value="720p30">720p • 30 fps (internet fraca)</option>`;
+    <option value="1440p60">1440p · 60 fps (rede forte)</option>
+    <option value="1080p60">1080p · 60 fps (recomendado)</option>
+    <option value="1080p30">1080p · 30 fps</option>
+    <option value="720p60">720p · 60 fps</option>
+    <option value="720p30">720p · 30 fps (internet fraca)</option>`;
   $('#opt-quality').value = store.get('desktop-quality', '1080p60');
   $('#opt-quality').addEventListener('change', (e) => store.set('desktop-quality', e.target.value));
   // Placa de vídeo (NVENC/AMF/QuickSync via Media Foundation), se o app suportar e houver hardware.
@@ -1891,8 +2238,8 @@ async function setupDesktop() {
 }
 
 // ---------------- botões de clipe configuráveis ----------------
-// Cada botão tem uma duração (menu ✂ Clipar) e, no app desktop, um atalho global.
-// Fica salvo neste aparelho.
+// Cada botão tem uma duração (durações rápidas do Clipar) e, no app desktop, um atalho
+// global. Fica salvo neste aparelho.
 
 const DEFAULT_CLIP_SLOTS = [
   { seconds: 30, key: 'Ctrl+F9' },
@@ -1925,13 +2272,22 @@ function saveClipSlots(slots) {
 /** "Ctrl+KeyK" -> "Ctrl+K" (como aparece na tela) */
 const keyLabel = (key) => key.replace(/Key([A-Z])$/, '$1').replace(/Digit(\d)$/, '$1');
 
-function fillClipMenu(menu) {
-  menu.replaceChildren(...clipSlots().map(({ seconds }) => {
+/** Menu do Clipar: as três durações rápidas e a lista completa (10 s a 3 min). */
+function fillClipMenu(menu, tile) {
+  const head = document.createElement('div');
+  head.className = 'overline';
+  head.textContent = tile ? `Clipar ${tile.name}` : 'Clipar';
+  const quick = clipSlots().map(({ seconds }) => {
     const b = document.createElement('button');
+    b.type = 'button';
     b.dataset.seconds = String(seconds);
     b.textContent = `Últimos ${lengthLabel(seconds)}`;
     return b;
-  }));
+  });
+  const other = document.createElement('select');
+  other.setAttribute('aria-label', 'Outra duração');
+  other.append(new Option('Outra duração…', ''), ...CLIP_DURATIONS.map((s) => new Option(`Últimos ${lengthLabel(s)}`, String(s))));
+  menu.replaceChildren(head, ...quick, other);
 }
 
 async function applyClipHotkeys() {
@@ -1958,53 +2314,57 @@ function shortcutFromEvent(e) {
 
 let capturing = null; // índice do botão esperando a tecla
 
+/** Seções Clipes (durações) e App Windows (atalhos) das configurações. */
 function renderClipSettings() {
-  const list = $('#clip-slots');
-  if (!list) return;
   const slots = clipSlots();
-  const withKeys = desktop && hotkeysSupported;
-  $('#clip-settings-hint').textContent = !desktop
-    ? 'Durações do menu ✂ Clipar. No app desktop dá pra pôr um atalho em cada uma (funciona dentro do jogo).'
-    : hotkeysSupported
-      ? 'Durações do ✂ Clipar e atalhos que funcionam até dentro do jogo. Clique no atalho e aperte qualquer tecla ou combinação. Tecla sozinha (sem Ctrl/Alt) para de digitar nos outros programas enquanto o app estiver aberto.'
-      : 'Atualize o app para trocar os atalhos (por enquanto: Ctrl+F9, Ctrl+F10 e Ctrl+F11).';
-  list.replaceChildren(...slots.map((slot, i) => {
+  $('#clip-slots').replaceChildren(...slots.map((slot, i) => {
     const li = document.createElement('li');
-    li.className = 'clip-slot';
-
+    const label = document.createElement('span');
+    label.textContent = `Opção ${i + 1}`;
     const select = document.createElement('select');
-    select.title = 'Duração do clipe';
-    for (const s of CLIP_DURATIONS) {
-      const o = document.createElement('option');
-      o.value = String(s);
-      o.textContent = lengthLabel(s);
-      select.append(o);
-    }
+    select.setAttribute('aria-label', `Duração da opção ${i + 1}`);
+    for (const s of CLIP_DURATIONS) select.append(new Option(lengthLabel(s), String(s)));
     select.value = String(slot.seconds);
     select.addEventListener('change', () => {
       slots[i].seconds = Number(select.value);
       saveClipSlots(slots);
+      toast('Durações salvas.');
     });
-    li.append(select);
+    li.append(label, select);
+    return li;
+  }));
 
-    if (withKeys) {
-      const key = document.createElement('button');
-      key.type = 'button';
-      key.className = 'clip-key';
-      const error = slot.key && hotkeyErrors[slot.key];
-      key.classList.toggle('error', !!error);
-      key.classList.toggle('waiting', capturing === i);
-      key.textContent = capturing === i ? 'Aperte as teclas…' : slot.key ? keyLabel(slot.key) : 'Sem atalho';
-      key.title = error ? `Não funcionou: ${error}` : 'Clique e aperte o atalho (Esc cancela, Backspace remove)';
-      key.addEventListener('click', () => startCapture(i));
-      li.append(key);
-      if (error) {
-        const warn = document.createElement('span');
-        warn.className = 'clip-key-error';
-        warn.textContent = error;
-        li.append(warn);
-      }
+  const withKeys = desktop && hotkeysSupported;
+  $('#hotkeys-hint').textContent = !desktop
+    ? 'Os atalhos funcionam no app Faz o L para Windows, inclusive com o jogo em primeiro plano. Abra este site pelo app para configurar.'
+    : hotkeysSupported
+      ? 'Ativos no app, inclusive com o jogo em primeiro plano. Clique no atalho e aperte a combinação (Esc cancela, Backspace remove). Tecla sozinha, sem Ctrl/Alt, deixa de digitar nos outros programas enquanto o app estiver aberto.'
+      : 'Atualize o app para trocar os atalhos (por enquanto: Ctrl+F9, Ctrl+F10 e Ctrl+F11).';
+  $('#hotkey-slots').replaceChildren(...slots.map((slot, i) => {
+    const li = document.createElement('li');
+    const label = document.createElement('span');
+    label.textContent = `Clipar ${lengthLabel(slot.seconds)}`;
+    li.append(label);
+    const key = document.createElement('button');
+    key.type = 'button';
+    key.className = 'clip-key';
+    const error = slot.key && hotkeyErrors[slot.key];
+    key.classList.toggle('error', !!error);
+    key.classList.toggle('waiting', capturing === i);
+    key.disabled = !withKeys;
+    key.textContent = capturing === i ? 'Aperte as teclas…' : slot.key ? keyLabel(slot.key) : 'Sem atalho';
+    key.title = error ? `Não funcionou: ${error}` : 'Clique e aperte o atalho';
+    key.addEventListener('click', () => startCapture(i));
+    const right = document.createElement('div');
+    right.className = 'button-row';
+    if (error) {
+      const warn = document.createElement('span');
+      warn.className = 'clip-key-error';
+      warn.textContent = error;
+      right.append(warn);
     }
+    right.append(key);
+    li.append(right);
     return li;
   }));
 }
@@ -2029,7 +2389,7 @@ document.addEventListener('keydown', (e) => {
     slots[capturing].key = '';
   } else {
     const shortcut = shortcutFromEvent(e);
-    if (!shortcut) return; // só modificador ainda, ou tecla sem Ctrl/Alt/Shift
+    if (!shortcut) return; // só modificador ainda
     // Mesmo atalho em outro botão: tira de lá
     for (const s of slots) if (s.key === shortcut) s.key = '';
     slots[capturing].key = shortcut;
@@ -2038,17 +2398,15 @@ document.addEventListener('keydown', (e) => {
   saveClipSlots(slots);
 }, true);
 
-// Configurações (ícone na barra da esquerda): botões de clipe e atualização do app
-$('#btn-settings').addEventListener('click', () => {
-  renderClipSettings();
-  $('#dlg-settings').showModal();
-});
-$('#settings-close').addEventListener('click', () => $('#dlg-settings').close());
 $('#dlg-settings').addEventListener('close', () => {
   if (capturing !== null) {
     capturing = null;
     applyClipHotkeys();
   }
+});
+// Esc durante a captura do atalho não fecha o painel
+$('#dlg-settings').addEventListener('cancel', (e) => {
+  if (capturing !== null) e.preventDefault();
 });
 
 $('#clip-settings-reset').addEventListener('click', () => {
@@ -2056,6 +2414,7 @@ $('#clip-settings-reset').addEventListener('click', () => {
   store.set('clip-slots', 'null');
   renderClipSettings();
   applyClipHotkeys();
+  toast('Durações padrão restauradas.');
 });
 renderClipSettings();
 
@@ -2068,7 +2427,8 @@ function clipTarget() {
   // O evento (YouTube) não vira clipe: o gravador só pega as lives da sala
   const lives = [...state.tiles.values()].filter((t) => !t.isEvent);
   let id = null;
-  if (state.focus && state.tiles.has(state.focus) && !state.tiles.get(state.focus).isEvent) id = state.focus;
+  const main = mainTileId();
+  if (state.focus && main && !state.tiles.get(main).isEvent && lives.length > 1) id = main;
   else if (lives.length === 1) id = lives[0].id;
   return id === '__local__' ? state.me.id : id;
 }
@@ -2076,9 +2436,9 @@ function clipTarget() {
 async function hotkeyClip(seconds) {
   if (!state.room || hotkeyBusy) return;
   const streamer = clipTarget();
-  if (!streamer) return toast('Atalho de clipe: coloque uma live em destaque (⤢) para saber qual clipar.', true);
+  if (!streamer) return toast('Atalho de clipe: use Destacar numa live para saber qual clipar.', true);
   hotkeyBusy = true;
-  toast(`✂ Gerando clipe dos últimos ${lengthLabel(seconds)}…`);
+  toast(`Gerando clipe dos últimos ${lengthLabel(seconds)}…`);
   try {
     const clip = await api(ch('/clips'), { method: 'POST', body: { streamer, seconds } });
     await api(`/api/clips/${clip.id}`, { method: 'PATCH', body: { publish: true } });
@@ -2180,6 +2540,7 @@ async function startNativeStream() {
       },
     });
     state.local = { native: true };
+    $('#dlg-broadcast').close();
   } catch (err) {
     await api(ch('/desktop/stop'), { method: 'POST' }).catch(() => {});
     toast(typeof err === 'string' ? err : err.message || 'Não foi possível transmitir.', true);
@@ -2372,9 +2733,10 @@ function applyEvent(data) {
   if (!ev.data) {
     if (before && state.tiles.has(EVENT_TILE)) toast('O evento acabou.');
     removeTile(EVENT_TILE);
+    renderRoomActions();
     return;
   }
-  if (!before) toast(`🎬 Evento: ${ev.data.title}`);
+  if (!before) toast(`Evento: ${ev.data.title}`);
   const tile = ensureEventTile();
   renderEventTile(tile);
   ensureEventPlayer().then(() => syncEventPlayer(true)).catch((err) => toast(err.message, true));
@@ -2383,30 +2745,37 @@ function applyEvent(data) {
 function ensureEventTile() {
   let tile = state.tiles.get(EVENT_TILE);
   if (tile) return tile;
-  const el = document.createElement('div');
-  el.className = 'tile tile-event has-video';
+  const el = document.createElement('article');
+  el.className = 'player tile tile-event has-video';
+  el.setAttribute('aria-label', 'Evento');
+  const icon = (name) => `<svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-${name}"></use></svg>`;
   el.innerHTML = `
-    <div class="event-player"><div></div></div>
-    <div class="event-shield"></div>
-    <div class="ev-sync" hidden></div>
-    <div class="tile-top">
-      <span class="badge-live badge-event">EVENTO</span>
-      <span class="tile-name"></span>
-    </div>
-    <div class="tile-controls">
-      <div class="ctl-group">
-        <button class="ctl ctl-mute" title="Mutar/desmutar">🔇</button>
-        <input class="ctl-volume" type="range" min="0" max="100" step="1" title="Volume" />
+    <div class="screen">
+      <div class="event-player"><div></div></div>
+      <div class="event-shield"></div>
+      <div class="screen-badges">
+        <span class="on-air event"><i class="dot"></i> EVENTO</span>
+        <span class="ev-sync" hidden></span>
       </div>
-      <button class="ctl ev-play" title="Tocar/pausar pra todo mundo">⏸</button>
-      <input class="ev-seek" type="range" min="0" max="0" step="1" value="0" title="Pular pra todo mundo" />
-      <span class="ev-time"></span>
-      <span class="spacer"></span>
-      <button class="ctl ev-stop" title="Encerrar o evento pra todo mundo">■ Encerrar</button>
-      <button class="ctl ctl-focus" title="Destacar">⤢</button>
-      <button class="ctl ctl-full" title="Tela cheia">⛶</button>
+    </div>
+    <div class="player-bar">
+      <div class="identity">
+        <span class="avatar tile-avatar" aria-hidden="true"></span>
+        <div><strong class="tile-name"></strong><small class="tile-sub"></small></div>
+      </div>
+      <div class="player-controls">
+        <button type="button" class="icon-btn ghost ctl-mute" title="Ativar som do evento" aria-label="Ativar som do evento">${icon('mute')}</button>
+        <input class="volume ctl-volume" type="range" min="0" max="100" step="1" aria-label="Volume do evento" />
+        <button type="button" class="icon-btn ghost ev-play" title="Tocar pra todo mundo" aria-label="Tocar pra todo mundo">${icon('play')}</button>
+        <input class="volume ev-seek" type="range" min="0" max="0" step="1" value="0" aria-label="Pular pra todo mundo" />
+        <span class="ev-time"></span>
+        <button type="button" class="button danger ev-stop" title="Encerrar o evento pra todo mundo">${icon('stop')}<span>Encerrar</span></button>
+        <button type="button" class="icon-btn ghost ctl-focus" title="Destacar" aria-label="Destacar">${icon('focus')}</button>
+        <button type="button" class="icon-btn ghost ctl-theater" title="Modo Teatro" aria-label="Modo Teatro" aria-pressed="false">${icon('theater')}</button>
+        <button type="button" class="icon-btn ghost ctl-full" title="Tela cheia" aria-label="Tela cheia">${icon('expand')}</button>
+      </div>
     </div>`;
-  tile = { id: EVENT_TILE, el, isEvent: true, video: null, publication: null };
+  tile = { id: EVENT_TILE, el, isEvent: true, name: 'Evento', video: null, publication: null };
 
   const volume = el.querySelector('.ctl-volume');
   volume.value = String(ev.volume);
@@ -2435,19 +2804,8 @@ function ensureEventTile() {
     controlEvent('seek', Number(seek.value));
   });
   el.querySelector('.ev-stop').addEventListener('click', stopEvent);
-  el.querySelector('.ctl-focus').addEventListener('click', () => {
-    state.focus = state.focus === EVENT_TILE ? null : EVENT_TILE;
-    layout();
-  });
-  el.querySelector('.ctl-full').addEventListener('click', () => toggleFullscreen(el));
-  el.addEventListener('dblclick', (e) => {
-    if (!e.target.closest('.tile-controls')) toggleFullscreen(el);
-  });
-  el.addEventListener('touchstart', () => {
-    el.classList.add('touch');
-    clearTimeout(tile.touchTimer);
-    tile.touchTimer = setTimeout(() => el.classList.remove('touch'), 3500);
-  }, { passive: true });
+  wireViewControls(tile);
+  el.querySelector('.screen').addEventListener('dblclick', () => toggleFullscreen(el));
 
   state.tiles.set(EVENT_TILE, tile);
   $('#stage').prepend(el);
@@ -2458,15 +2816,27 @@ function ensureEventTile() {
 function renderEventTile(tile) {
   const d = ev.data;
   const control = canControlEvent();
-  tile.el.querySelector('.tile-name').textContent = `${d.title} • ${d.by.name}`;
+  const source = { youtube: 'YouTube', twitch: 'Twitch', kick: 'Kick' }[d.source || 'youtube'] || 'Vídeo';
+  tile.name = d.title;
+  tile.el.querySelector('.tile-name').textContent = d.title;
+  tile.el.querySelector('.tile-sub').textContent = `Evento de ${d.by.name} · ${source}`;
+  tile.el.setAttribute('aria-label', `Evento: ${d.title}`);
+  fillMark(tile.el.querySelector('.tile-avatar'), d.by.name, d.by.avatar);
   const kick = d.source === 'kick';
-  tile.el.querySelector('.ev-play').hidden = !control || kick;
-  tile.el.querySelector('.ev-play').textContent = d.playing ? '⏸' : '▶';
+  const play = tile.el.querySelector('.ev-play');
+  play.hidden = !control || kick;
+  // O kit não tem pausa: mesmas regras de traço (24 × 24, 1,8 px)
+  play.innerHTML = d.playing
+    ? '<svg class="icon" aria-hidden="true" viewBox="0 0 24 24" stroke-width="1.8" stroke-linecap="round"><path d="M9 6v12M15 6v12"/></svg>'
+    : '<svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-play"></use></svg>';
+  play.title = d.playing ? 'Pausar pra todo mundo' : 'Tocar pra todo mundo';
+  play.setAttribute('aria-label', play.title);
   tile.el.querySelector('.ev-seek').hidden = !control || kick || isEventLive();
   tile.el.querySelector('.ev-stop').hidden = !control;
   // Kick: sem comandos de fora; o som e a tela cheia ficam nos controles do player da Kick
   tile.el.classList.toggle('kick', kick);
   tile.el.classList.toggle('paused', !d.playing && !kick);
+  renderRoomActions();
 }
 
 function isEventLive() {
@@ -2642,7 +3012,7 @@ function renderEventTime() {
   const time = tile.el.querySelector('.ev-time');
   const seek = tile.el.querySelector('.ev-seek');
   if (live) {
-    time.textContent = '🔴 AO VIVO';
+    time.textContent = 'Ao vivo';
   } else {
     const cur = p.getCurrentTime() || 0;
     const dur = p.getDuration() || 0;
@@ -2655,7 +3025,13 @@ function renderEventTime() {
 
 function applyEventVolume() {
   const tile = state.tiles.get(EVENT_TILE);
-  if (tile) tile.el.querySelector('.ctl-mute').textContent = ev.muted || ev.volume === 0 ? '🔇' : '🔊';
+  if (tile) {
+    const mute = tile.el.querySelector('.ctl-mute');
+    const silent = ev.muted || ev.volume === 0;
+    setIco(mute, silent ? 'mute' : 'volume');
+    mute.title = silent ? 'Ativar som do evento' : 'Silenciar o evento';
+    mute.setAttribute('aria-label', mute.title);
+  }
   const p = ev.player;
   if (!p || !ev.ready) return;
   p.setVolume(ev.volume);
@@ -2677,7 +3053,8 @@ async function controlEvent(action, position, live = false) {
 }
 
 async function stopEvent() {
-  if (!confirm('Encerrar o evento pra todo mundo?')) return;
+  const title = ev.data?.title ? `“${ev.data.title}”` : 'O evento';
+  if (!(await confirmAction('Encerrar evento?', `${title} será encerrado pra todo mundo na sala.`, 'Encerrar evento'))) return;
   try {
     await api(ch('/event'), { method: 'DELETE' });
     applyEvent(null);
@@ -2686,9 +3063,10 @@ async function stopEvent() {
   }
 }
 
-// Começar evento (painel Transmitir → "Começar evento")
+// Começar evento (cabeçalho da sala). Quem controla o evento atual vê "Encerrar evento".
 $('#btn-event').addEventListener('click', () => {
-  if (ev.data && !canControlEvent()) return toast(`Já tem um evento rolando (de ${ev.data.by.name}).`, true);
+  if (ev.data && canControlEvent()) return stopEvent();
+  if (ev.data) return toast(`Já tem um evento rolando (de ${ev.data.by.name}).`, true);
   $('#event-url').value = '';
   $('#event-title').value = '';
   $('#dlg-event').showModal();
@@ -2787,6 +3165,6 @@ function renderEventSync() {
   badge.classList.toggle('ok', all);
   badge.textContent = all
     ? `✓ ${rows.length === 1 ? 'Sincronizado' : `Todos sincronizados (${rows.length})`}`
-    : `⟳ ${synced} de ${rows.length} sincronizados`;
+    : `${synced} de ${rows.length} sincronizados`;
   badge.title = rows.map((r) => `${r.ok ? '✓' : '…'} ${r.name}: ${r.text}`).join('\n');
 }

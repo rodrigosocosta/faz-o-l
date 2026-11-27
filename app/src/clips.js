@@ -332,9 +332,10 @@ export async function clipsRouter() {
 <meta property="og:video:secure_url" content="${escapeHtml(video)}">
 <meta property="og:video:type" content="${escapeHtml(clip.mime)}">
 <meta property="og:video:width" content="1280"><meta property="og:video:height" content="720">
-<meta name="theme-color" content="#ed4245">
-<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#111214;color:#f2f3f5;font:15px system-ui,"Segoe UI",sans-serif;padding:16px;box-sizing:border-box}
-main{width:min(1100px,100%)}video{width:100%;border-radius:14px;background:#000}h1{font-size:20px;margin:12px 0 4px}p{margin:0 0 6px;color:#949ba4;white-space:pre-wrap}a{color:#8ea1e1}</style>
+<meta name="theme-color" content="#16191e">
+<link rel="icon" href="/img/logo-faz-o-l.svg">
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#16191e;color:#eff3f9;font:15px/1.5 system-ui,"Segoe UI",sans-serif;padding:16px;box-sizing:border-box}
+main{width:min(1100px,100%)}video{width:100%;border-radius:10px;border:1px solid #353e4a;background:#0b0c0b}h1{font-size:22px;letter-spacing:-.03em;margin:14px 0 4px}p{margin:0 0 6px;color:#aeb9c9;white-space:pre-wrap}a{color:#9ec5fd}</style>
 </head><body><main>
 <video src="${escapeHtml(video)}" controls autoplay playsinline></video>
 <h1>${escapeHtml(title)}</h1>
