@@ -80,7 +80,7 @@ troca. Esses fluxos reais não são simulados pela confirmação de saúde da AP
 ## 3. Deploy automático após testes e release pela rede Tailscale
 
 O painel restrito ao Tailscale não recebe webhooks públicos do GitHub. O workflow
-`Deploy VPS (Coolify)` conecta um runner temporário à rede privada e chama a API
+`Deploy` conecta um runner temporário à rede privada e chama a API
 do Coolify. Ele espera os workflows **CI** e **App desktop (Windows)** terem sucesso
 para o mesmo commit de push na `main`, ignora commits já substituídos na branch e
 fixa o commit aprovado antes de pedir o deploy. A segunda conclusão dos workflows
