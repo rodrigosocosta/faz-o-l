@@ -302,7 +302,6 @@ function renderRoomActions() {
   let hasEvent = false;
   try { hasEvent = !!ev.data; } catch { /* evento ainda não carregado */ }
   $('#btn-event').hidden = !inRoom || hasEvent;
-  $('#btn-event').querySelector('span').textContent = 'Começar evento';
 }
 
 /** Caminho da API do canal atual. */
@@ -2854,6 +2853,10 @@ function ensureEventTile() {
         <span class="on-air event"><i class="dot"></i> EVENTO</span>
         <span class="ev-sync" hidden></span>
       </div>
+      <div class="screen-volume">
+        <button type="button" class="icon-btn ghost ctl-mute" title="Ativar som do evento" aria-label="Ativar som do evento">${icon('mute')}</button>
+        <input class="volume ctl-volume" type="range" min="0" max="100" step="1" aria-label="Volume do evento" />
+      </div>
     </div>
     <div class="player-bar">
       <div class="identity">
@@ -2861,8 +2864,6 @@ function ensureEventTile() {
         <div><strong class="tile-name"></strong><small class="tile-sub"></small></div>
       </div>
       <div class="player-controls">
-        <button type="button" class="icon-btn ghost ctl-mute" title="Ativar som do evento" aria-label="Ativar som do evento">${icon('mute')}</button>
-        <input class="volume ctl-volume" type="range" min="0" max="100" step="1" aria-label="Volume do evento" />
         <button type="button" class="icon-btn ghost ev-play" title="Tocar pra todo mundo" aria-label="Tocar pra todo mundo">${icon('play')}</button>
         <input class="volume ev-seek" type="range" min="0" max="0" step="1" value="0" aria-label="Pular pra todo mundo" />
         <span class="ev-time"></span>
@@ -3169,7 +3170,7 @@ async function stopEvent() {
   }
 }
 
-// Começar evento no cabeçalho; encerrar fica apenas nos controles do próprio player.
+// Começar evento no menu lateral; encerrar fica apenas nos controles do próprio player.
 $('#btn-event').addEventListener('click', () => {
   if (ev.data) return toast(`Já tem um evento rolando (de ${ev.data.by.name}).`, true);
   $('#event-url').value = '';

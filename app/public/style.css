@@ -205,6 +205,16 @@ input[type=range] { accent-color: var(--accent); }
 .player-controls .icon { width: 17px; height: 17px; }
 .player-controls .ctl-theater[aria-pressed="true"], .player-controls .ctl-pip.active { color: var(--accent); background: var(--elev); }
 .volume { width: 64px; margin: 0 4px; }
+/* volume: canto inferior esquerdo do vídeo, aparece ao passar o mouse */
+.screen-volume { position: absolute; left: 10px; bottom: 10px; z-index: 2; display: flex; align-items: center; padding: 2px; border-radius: 999px; background: #10110fd9; border: 1px solid #5a5b54; color: #eff3f9; opacity: 0; transition: opacity .15s ease; }
+.screen:hover .screen-volume, .screen-volume:focus-within { opacity: 1; }
+.screen-volume .icon-btn { min-width: 34px; min-height: 34px; padding: 6px; border-radius: 999px; color: inherit; }
+.screen-volume .icon { width: 17px; height: 17px; }
+.screen-volume .volume { width: 0; margin: 0; opacity: 0; transition: width .15s ease, margin .15s ease, opacity .15s ease; }
+.screen-volume:hover .volume, .screen-volume:focus-within .volume { width: 84px; margin: 0 10px 0 4px; opacity: 1; }
+.screen-volume:not(:has(> :not([hidden]))) { display: none; }
+@media (hover: none) { .screen-volume { opacity: 1; } }
+.stage:fullscreen > .tile.fullscreen-main .screen-volume { bottom: 78px; }
 .ctl-quality { width: auto !important; min-height: 37px !important; padding: 4px 26px 4px 9px !important; font-size: .8rem; font-weight: 650 !important; border-color: var(--line) !important; }
 /* ao lado (Em destaque / Teatro): controles compactos */
 .stage.count-multi:not(.split) > .tile:not(.is-main) .player-bar { display: grid; gap: 6px; }
@@ -404,7 +414,6 @@ dialog.settings-modal[open] { display: grid; grid-template-rows: auto minmax(0, 
   .top-right { gap: 4px; }
   .top-right .button { padding: 7px 8px; }
   .top-right .button .icon { display: none; }
-  #btn-event span { font-size: .8rem; }
   .mobile-only { display: inline-flex !important; min-width: 34px; width: 34px; }
   .main { padding: 19px 12px 25px; }
   .main h1 { font-size: 2.08rem; }
