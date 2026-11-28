@@ -93,8 +93,8 @@ Configure no GitHub em **Settings → Secrets and variables → Actions**:
 
 | Tipo | Nome | Valor |
 |---|---|---|
-| Variable | `COOLIFY_URL` | `http://<IP-TAILSCALE-DA-VPS>:8000` |
-| Variable | `COOLIFY_TAILSCALE_HOST` | `<IP-TAILSCALE-DA-VPS>` |
+| Secret | `COOLIFY_URL` | `http://<IP-TAILSCALE-DA-VPS>:8000` |
+| Secret | `COOLIFY_TAILSCALE_HOST` | `<IP-TAILSCALE-DA-VPS>` |
 | Variable | `COOLIFY_APP_UUID` | UUID exibido pelo script |
 | Variable | `COOLIFY_DEPLOY_ENABLED` | `true`, somente após concluir a primeira migração |
 | Secret | `COOLIFY_TOKEN` | Token do Coolify com leitura, escrita e deploy |
