@@ -1,6 +1,3 @@
-import { initTelemetry } from './telemetry.js';
-
-const telemetry = initTelemetry();
 const { server } = await import('./index.js');
 let stopping = false;
 for (const signal of ['SIGINT', 'SIGTERM']) {
@@ -10,7 +7,6 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
     setTimeout(() => process.exit(0), 5000).unref();
     server.closeAllConnections();
     await new Promise(resolve => server.close(resolve));
-    await telemetry.shutdown();
     process.exit(0);
   });
 }

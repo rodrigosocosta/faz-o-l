@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark light" />
   <title>Faz o L</title>
   <meta name="description" content="Transmita sua tela para a galera do Discord com quase zero de delay." />
-  <meta name="theme-color" content="#16191e" />
+  <meta name="theme-color" content="#0f1218" />
   <link rel="icon" href="/img/logo-faz-o-l.svg" type="image/svg+xml" />
   <script>
     // Tema e barra lateral antes de pintar a página (evita piscar o tema errado)
@@ -156,13 +156,11 @@
 
         <!-- Sala -->
         <section id="view-room" class="view" hidden>
-          <div class="intro">
+          <div class="intro room-summary">
             <div>
-              <h1>Sala ao vivo</h1>
               <div class="meta">
                 <span id="pill-live"><i class="dot"></i><span id="live-count">0/2 ao vivo</span></span>
                 <span><svg class="icon" aria-hidden="true"><use href="/img/icones.svg#i-eye"></use></svg><span id="viewer-count">0/15 espectadores</span></span>
-                <button type="button" class="link-btn" id="btn-leave">Sair da sala</button>
               </div>
             </div>
             <div class="segment room-layouts" id="layout-switch" role="group" aria-label="Layout das transmissões" hidden>

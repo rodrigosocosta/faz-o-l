@@ -1,0 +1,136 @@
+{
+  "services": {
+    "livekit": {
+      "image": "livekit/livekit-server:${LIVEKIT_VERSION:-v1.13.11}",
+      "restart": "unless-stopped",
+      "ports": [
+        "7881:7881/tcp",
+        "7882:7882/udp"
+      ],
+      "networks": {
+        "default": {
+          "aliases": [
+            "fazol-livekit"
+          ]
+        },
+        "traefik": {}
+      },
+      "environment": {
+        "LIVEKIT_CONFIG": "port: 7880\nlogging:\n  level: info\nrtc:\n  tcp_port: 7881\n  udp_port: 7882\n  use_external_ip: true\n  node_ip: \"${LIVEKIT_NODE_IP:-}\"\nkeys:\n  ${LIVEKIT_API_KEY:?Defina LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET:?Defina LIVEKIT_API_SECRET}\nwebhook:\n  api_key: ${LIVEKIT_API_KEY}\n  urls:\n    - http://fazol-app:3000/api/livekit/webhook\nroom:\n  empty_timeout: 300\n"
+      },
+      "labels": [
+        "traefik.enable=true",
+        "traefik.docker.network=${TRAEFIK_NETWORK:-coolify}",
+        "traefik.http.routers.fazol-rtc.rule=Host(`${DOMAIN}`) && PathPrefix(`/rtc`)",
+        "traefik.http.routers.fazol-rtc.entrypoints=${TRAEFIK_ENTRYPOINT_HTTPS:-https}",
+        "traefik.http.routers.fazol-rtc.tls=true",
+        "traefik.http.routers.fazol-rtc.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}",
+        "traefik.http.routers.fazol-rtc.service=fazol-rtc",
+        "traefik.http.services.fazol-rtc.loadbalancer.server.port=7880"
+      ]
+    },
+    "app": {
+      "build": "./app",
+      "restart": "unless-stopped",
+      "networks": {
+        "default": {
+          "aliases": [
+            "fazol-app"
+          ]
+        },
+        "traefik": {}
+      },
+      "environment": {
+        "DOMAIN": "${DOMAIN:-}",
+        "LIVEKIT_API_KEY": "${LIVEKIT_API_KEY:-}",
+        "LIVEKIT_API_SECRET": "${LIVEKIT_API_SECRET:-}",
+        "LIVEKIT_NODE_IP": "${LIVEKIT_NODE_IP:-}",
+        "LIVEKIT_VERSION": "${LIVEKIT_VERSION:-}",
+        "LIVEKIT_PUBLIC_URL": "${LIVEKIT_PUBLIC_URL:-}",
+        "SESSION_SECRET": "${SESSION_SECRET:?Preserve SESSION_SECRET}",
+        "MAX_STREAMERS": "${MAX_STREAMERS:-2}",
+        "MAX_VIEWERS": "${MAX_VIEWERS:-15}",
+        "ROOM_NAME": "${ROOM_NAME:-faz-o-l}",
+        "DISCORD_CLIENT_ID": "${DISCORD_CLIENT_ID:-}",
+        "DISCORD_CLIENT_SECRET": "${DISCORD_CLIENT_SECRET:-}",
+        "DISCORD_BOT_TOKEN": "${DISCORD_BOT_TOKEN:-}",
+        "CREATOR_DISCORD_IDS": "${CREATOR_DISCORD_IDS:-}",
+        "DISCORD_GUILD_ID": "${DISCORD_GUILD_ID:-}",
+        "DISCORD_NOTIFY_CHANNEL_ID": "${DISCORD_NOTIFY_CHANNEL_ID:-}",
+        "DISCORD_CLIPS_CHANNEL_ID": "${DISCORD_CLIPS_CHANNEL_ID:-}",
+        "LIVEKIT_HOST": "http://fazol-livekit:7880",
+        "PUBLIC_URL": "https://${DOMAIN:?Defina DOMAIN}",
+        "RECORDER_URL": "http://fazol-recorder:8090",
+        "CLIPS_DIR": "/data/clips",
+        "DB_FILE": "/data/app/fazol.db",
+        "FAZOL_CLIPS_VOLUME": "${FAZOL_CLIPS_VOLUME:?Informe o volume existente}",
+        "FAZOL_APPDATA_VOLUME": "${FAZOL_APPDATA_VOLUME:?Informe o volume existente}",
+        "FAZOL_RECORDER_BUFFER_VOLUME": "${FAZOL_RECORDER_BUFFER_VOLUME:?Informe o volume existente}"
+      },
+      "labels": [
+        "traefik.enable=true",
+        "traefik.docker.network=${TRAEFIK_NETWORK:-coolify}",
+        "traefik.http.routers.fazol-app.rule=Host(`${DOMAIN}`)",
+        "traefik.http.routers.fazol-app.entrypoints=${TRAEFIK_ENTRYPOINT_HTTPS:-https}",
+        "traefik.http.routers.fazol-app.tls=true",
+        "traefik.http.routers.fazol-app.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}",
+        "traefik.http.routers.fazol-app.service=fazol-app",
+        "traefik.http.services.fazol-app.loadbalancer.server.port=3000",
+        "traefik.http.middlewares.fazol-https.redirectscheme.scheme=https",
+        "traefik.http.routers.fazol-http.rule=Host(`${DOMAIN}`)",
+        "traefik.http.routers.fazol-http.entrypoints=${TRAEFIK_ENTRYPOINT_HTTP:-http}",
+        "traefik.http.routers.fazol-http.middlewares=fazol-https",
+        "traefik.http.routers.fazol-http.service=fazol-app"
+      ],
+      "volumes": [
+        "clips:/data/clips",
+        "appdata:/data/app"
+      ]
+    },
+    "recorder": {
+      "build": "./recorder",
+      "restart": "unless-stopped",
+      "networks": {
+        "default": {
+          "aliases": [
+            "fazol-recorder"
+          ]
+        }
+      },
+      "environment": {
+        "LIVEKIT_WS_URL": "ws://fazol-livekit:7880",
+        "LIVEKIT_API_KEY": "${LIVEKIT_API_KEY}",
+        "LIVEKIT_API_SECRET": "${LIVEKIT_API_SECRET}",
+        "CLIPS_DIR": "/data/clips",
+        "BUFFER_DIR": "/data/buffer"
+      },
+      "volumes": [
+        "clips:/data/clips",
+        "recorder_buffer:/data/buffer"
+      ],
+      "depends_on": [
+        "livekit"
+      ]
+    }
+  },
+  "volumes": {
+    "clips": {
+      "external": true,
+      "name": "${FAZOL_CLIPS_VOLUME}"
+    },
+    "appdata": {
+      "external": true,
+      "name": "${FAZOL_APPDATA_VOLUME}"
+    },
+    "recorder_buffer": {
+      "external": true,
+      "name": "${FAZOL_RECORDER_BUFFER_VOLUME}"
+    }
+  },
+  "networks": {
+    "traefik": {
+      "external": true,
+      "name": "${TRAEFIK_NETWORK:-coolify}"
+    }
+  }
+}

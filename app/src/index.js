@@ -1,6 +1,4 @@
 import { registerPageRoutes } from './page-routes.js';
-import { clientLogsRouter } from './client-logs.js';
-import { httpTelemetry } from './telemetry.js';
 import { logger } from './logger.js';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -24,12 +22,10 @@ migrateLegacy();
 const app = express();
 app.set('trust proxy', true);
 app.disable('x-powered-by');
-app.use(httpTelemetry);
 
 app.get('/healthz', (_req, res) => res.send('ok'));
 
 app.use(sessionMiddleware);
-app.use(clientLogsRouter({origin:new URL(config.publicUrl).origin}));
 app.use(authRouter());
 app.use(channelsRouter());
 app.use(livekitRouter());

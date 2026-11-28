@@ -1,0 +1,71 @@
+name: Deploy VPS (Coolify)
+
+on:
+  workflow_run:
+    workflows: ['CI', 'App desktop (Windows)']
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: coolify-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      vars.COOLIFY_DEPLOY_ENABLED == 'true' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Conferir testes e publicação da release do mesmo commit
+        id: gate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const {pathToFileURL} = await import('node:url');
+            const {eligibleCommit} = await import(pathToFileURL(`${process.env.GITHUB_WORKSPACE}/.github/scripts/coolify-deploy.mjs`).href);
+            const sha = context.payload.workflow_run.head_sha;
+            const {owner,repo} = context.repo;
+            const branch = await github.rest.repos.getBranch({owner,repo,branch:'main'});
+            const runs = await Promise.all(['ci.yml','desktop.yml'].map(async workflow_id => {
+              const result = await github.rest.actions.listWorkflowRuns({owner,repo,workflow_id,branch:'main',event:'push',head_sha:sha,per_page:30});
+              return result.data.workflow_runs;
+            }));
+            const ready = eligibleCommit({sha,latestSha:branch.data.commit.sha,runs});
+            core.setOutput('ready',String(ready));
+            core.info(ready ? 'Testes e release concluídos: deploy liberado.' : 'Aguardando os dois workflows ou commit já substituído na main.');
+
+      - name: Conectar à rede privada da VPS
+        if: steps.gate.outputs.ready == 'true'
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:github-actions
+          ping: ${{ vars.COOLIFY_TAILSCALE_HOST }}
+
+      - name: Solicitar deploy ao Coolify
+        if: steps.gate.outputs.ready == 'true'
+        uses: actions/github-script@v7
+        env:
+          COOLIFY_URL: ${{ vars.COOLIFY_URL }}
+          COOLIFY_APP_UUID: ${{ vars.COOLIFY_APP_UUID }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        with:
+          script: |
+            const {pathToFileURL} = await import('node:url');
+            const {triggerDeployment} = await import(pathToFileURL(`${process.env.GITHUB_WORKSPACE}/.github/scripts/coolify-deploy.mjs`).href);
+            const id = await triggerDeployment({url:process.env.COOLIFY_URL,token:process.env.COOLIFY_TOKEN,uuid:process.env.COOLIFY_APP_UUID,sha:context.payload.workflow_run.head_sha});
+            core.info(id ? `Deploy solicitado ao Coolify: ${id}. Acompanhe o resultado no painel.` : 'Este commit já foi enviado ao Coolify.');

@@ -20,8 +20,6 @@ services:
     environment:
       LIVEKIT_CONFIG: |
         port: 7880
-        prometheus:
-          port: 6789 # apenas na rede Docker; o overlay ativa a coleta
         logging:
           level: info
         rtc:

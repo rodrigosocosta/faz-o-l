@@ -5,7 +5,6 @@ import { AccessToken, RoomServiceClient, TrackSource, WebhookReceiver } from 'li
 import { config } from './config.js';
 import { requireUser } from './auth.js';
 import { channelHooks, channelIdFromRoom, getChannel, requireMember, roomName } from './channels.js';
-import { recordStreamEnded, recordStreamStarted } from './telemetry.js';
 
 const { host, apiKey, apiSecret } = config.livekit;
 const roomService = new RoomServiceClient(host, apiKey, apiSecret);
@@ -178,7 +177,6 @@ function endStream(room, identity) {
   activeStreams.delete(k);
   const channel = getChannel(channelIdFromRoom(room));
   const platform = isDesktop(identity) ? 'desktop' : 'browser';
-  recordStreamEnded(k, platform);
   if (channel) {
     logger.event('INFO', 'Transmissão encerrada', {
       'event.name': 'stream.ended', 'stream.state': 'ended', 'streamer.id': ownerOf(identity),
@@ -222,7 +220,6 @@ export function livekitRouter() {
           const name = displayName(p.identity, p.name);
           activeStreams.set(key(room, p.identity), name);
           const platform = isDesktop(p.identity) ? 'desktop' : 'browser';
-          recordStreamStarted(key(room, p.identity), platform);
           logger.event('INFO', 'Transmissão iniciada', {
             'event.name': 'stream.started', 'stream.state': 'active', 'streamer.id': ownerOf(p.identity),
             'streamer.name': name, 'stream.platform': platform, 'channel.id': channel.id, 'channel.name': channel.name,

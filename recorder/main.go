@@ -10,8 +10,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/codes"
 	"log"
 	"log/slog"
 	"net"
@@ -394,18 +392,11 @@ var safeID = regexp.MustCompile(`^[A-Za-z0-9_-]{6,32}$`)
 var errTooEarly = fmt.Errorf("a live acabou de começar, ainda não tem nada gravado")
 
 func makeClip(ctx context.Context, req clipRequest) (result map[string]any, clipErr error) {
-	ctx, span := otel.Tracer("fazol.recorder").Start(ctx, "recorder.clip")
-	started := time.Now()
 	defer func() {
 		if clipErr != nil {
-			span.SetStatus(codes.Error, "")
 			slog.ErrorContext(ctx, "clipe falhou", "error", clipErr)
 		}
-		clipObservation(ctx, started, clipErr)
-		span.End()
 	}()
-	_, waiting := otel.Tracer("fazol.recorder").Start(ctx, "recorder.wait_segments")
-	defer waiting.End()
 	ensureJoined(req.Room)
 
 	// Live que acabou de começar: espera o gravador entrar e o primeiro pedaço sair
@@ -436,7 +427,6 @@ func makeClip(ctx context.Context, req clipRequest) (result map[string]any, clip
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
-	waiting.End()
 	sort.Slice(segs, func(i, j int) bool { return segs[i].start.Before(segs[j].start) })
 
 	// Começa no último pedaço que inicia antes de "agora - N" (sempre num quadro-chave)
@@ -540,7 +530,6 @@ func newHTTPHandler() http.Handler {
 		}
 		res, err := makeClip(r.Context(), req)
 		if err != nil {
-			// makeClip já registrou a falha no contexto do span de processamento.
 			status := http.StatusInternalServerError
 			if err == errTooEarly {
 				status = http.StatusConflict
@@ -556,7 +545,7 @@ func newHTTPHandler() http.Handler {
 		ensureJoined(r.URL.Query().Get("room"))
 		w.WriteHeader(http.StatusNoContent)
 	})
-	return instrumentHTTP(mux)
+	return mux
 }
 
 // ---------------------------------------------------------------------------
@@ -729,10 +718,7 @@ func watchRooms() {
 }
 
 func main() {
-	shutdown, err := initTelemetry(context.Background())
-	if err != nil {
-		slog.Warn("telemetria desativada: configuração inválida")
-	}
+	initLogging()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if apiKey == "" || apiSecret == "" {
@@ -760,9 +746,4 @@ func main() {
 	timeout, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = server.Shutdown(timeout)
-	if shutdown != nil {
-		flush, cancelFlush := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancelFlush()
-		_ = shutdown(flush)
-	}
 }

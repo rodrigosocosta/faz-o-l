@@ -111,6 +111,9 @@ Pronto: abra `https://SEU_DOMINIO` ou use `/live` no Discord.
 
 ## Comandos úteis
 
+Para gerenciar uma instalação existente e os deploys pelo Coolify, consulte
+[o script de cadastro e migração](docs/coolify.md).
+
 ```bash
 docker compose logs -f app       # logs do site/bot
 docker compose logs -f livekit   # logs do servidor de vídeo
@@ -159,12 +162,10 @@ Abra http://localhost:3000. O `localhost` conta como contexto seguro, então a c
 
 ## Stack
 
+Logs operacionais: `docker compose logs -f app recorder`.
+
 [LiveKit](https://github.com/livekit/livekit) (SFU WebRTC) · Node.js + Express · [discord.js](https://discord.js.org) · Caddy ou Traefik · HTML/CSS/JS sem build.
 
 ## Licença
 
 [MIT](LICENSE)
-
-## Observabilidade
-
-O projeto oferece uma stack opcional de SigNoz próprio para traces, logs e métricas da API, do gravador e métricas do LiveKit. Consulte [observability/README.md](observability/README.md) para ativar com Caddy ou Traefik, acessar o painel local e operar a stack.

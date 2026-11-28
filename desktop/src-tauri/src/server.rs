@@ -49,7 +49,6 @@ fn allow_remote(app: &AppHandle, origin: &Url) {
         .permission("allow-list-windows")
         .permission("allow-gpu-encoder")
         .permission("allow-app-version")
-        .permission("allow-take-client-logs")
         .permission("allow-update-status")
         .permission("allow-start-stream")
         .permission("allow-stop-stream")

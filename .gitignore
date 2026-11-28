@@ -1,4 +1,8 @@
 .env
+.env.before-signoz-removal.*
+.env.without-signoz.*
+.coolify-migration/
+__pycache__/
 node_modules/
 *.log
 .DS_Store
@@ -6,4 +10,3 @@ desktop/release.conf.json
 .claude/settings.local.json
 
 .superpowers/
-observability/.cache/

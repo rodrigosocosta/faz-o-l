@@ -12,6 +12,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Testar versionamento de releases
+        run: node --test .github/scripts/desktop-version.test.mjs .github/scripts/coolify-deploy.test.mjs
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Testar cadastro e migração para Coolify
+        run: python3 scripts/setup-coolify.test.py
       - name: Instalar dependências
         working-directory: app
         run: npm ci
@@ -19,7 +26,7 @@ jobs:
         with:
           go-version-file: recorder/go.mod
           cache-dependency-path: recorder/go.sum
-      - name: Testar telemetria da API
+      - name: Testar API e navegação
         working-directory: app
         run: npm test
       - name: Testar e compilar gravador
@@ -27,9 +34,7 @@ jobs:
         run: |
           go test -race ./...
           go vet ./...
-          go build -o /tmp/fazol-recorder-otel .
-      - name: Testar trace distribuído Node para Go
-        run: node observability/test-integration.mjs /tmp/fazol-recorder-otel
+          go build -o /tmp/fazol-recorder .
       - name: Checar sintaxe
         working-directory: app
         run: npm run check
@@ -47,15 +52,12 @@ jobs:
           CREATOR_DISCORD_IDS: "11111"
         run: node smoke.test.mjs
       - name: Checar install.sh
-        run: bash -n install.sh && sh -n observability/stack.sh
+        run: bash -n install.sh
       - name: Validar docker-compose (Caddy e Traefik)
         run: |
           cp .env.example .env
           COMPOSE_FILE=docker-compose.yml:docker-compose.caddy.yml docker compose config -q
           COMPOSE_FILE=docker-compose.yml:docker-compose.traefik.yml docker compose config -q
-          COMPOSE_FILE=docker-compose.yml:docker-compose.caddy.yml:docker-compose.observability.yml docker compose config -q
-          COMPOSE_FILE=docker-compose.yml:docker-compose.traefik.yml:docker-compose.observability.yml docker compose config -q
-          docker compose -f observability/pours/deployment/compose.yaml config -q
-          python3 observability/config.test.py
+          FAZOL_APPDATA_VOLUME=faz-o-l_appdata FAZOL_CLIPS_VOLUME=faz-o-l_clips FAZOL_RECORDER_BUFFER_VOLUME=faz-o-l_recorder_buffer docker compose -f docker-compose.coolify.yml config -q
       - name: Build da imagem
         run: docker build -t faz-o-l ./app

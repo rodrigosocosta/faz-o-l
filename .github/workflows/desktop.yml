@@ -1,7 +1,7 @@
 name: App desktop (Windows)
 
 # Gera o instalador do app desktop num servidor Windows do GitHub.
-# - Push em main que mexa em desktop/: instalador fica nos "Artifacts" do run (teste).
+# - Todo push em main: publica uma Release com a próxima versão patch (vX.Y.Z).
 # - Tag de versão (alpha-0.1.0, beta-0.2.0, v1.0.0): publica uma Release com o
 #   instalador + latest.json. Os apps instalados olham o latest.json da última
 #   Release ao abrir e se atualizam sozinhos.
@@ -11,16 +11,13 @@ name: App desktop (Windows)
 # Segredos (Settings > Secrets and variables > Actions):
 #   TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 #   assinam a atualização (gere com "npx tauri signer generate" e ponha a chave
-#   pública em plugins.updater.pubkey no tauri.conf.json). Sem eles o instalador
-#   sai igual, só que sem atualização automática.
+#   pública em plugins.updater.pubkey no tauri.conf.json). Sem a chave privada, a publicação
+#   falha para não substituir a latest por uma versão sem atualização automática.
 # Variável FAZOL_SERVER_URL: servidor embutido no app (ou input manual abaixo).
 
 on:
   push:
     branches: [main]
-    paths:
-      - "desktop/**"
-      - ".github/workflows/desktop.yml"
     tags:
       - "alpha-*"
       - "beta-*"
@@ -35,6 +32,11 @@ on:
 permissions:
   contents: write
 
+# A versão seguinte só é calculada depois que a publicação anterior termina.
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
 jobs:
   windows:
     runs-on: windows-latest
@@ -43,6 +45,8 @@ jobs:
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -58,23 +62,22 @@ jobs:
         working-directory: desktop
         run: npm ci
 
+      - name: Testar versionamento
+        run: node --test .github/scripts/desktop-version.test.mjs
+
+      - name: Resolver versão e tag
+        id: release
+        run: node .github/scripts/desktop-version.mjs
+
       - name: Versão
         id: version
         shell: pwsh
         run: |
-          $ref = "${{ github.ref_name }}"
-          $conf = Get-Content desktop/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
-          $release = $false
-          if ("${{ github.ref_type }}" -eq "tag" -and $ref -match '^(alpha|beta|rc)-(\d+\.\d+\.\d+)$') {
-            $version = "$($Matches[2])-$($Matches[1])"; $release = $true
-          } elseif ("${{ github.ref_type }}" -eq "tag" -and $ref -match '^v(\d+\.\d+\.\d+)$') {
-            $version = $Matches[1]; $release = $true
-          } elseif ("${{ github.ref_type }}" -eq "tag") {
-            throw "Tag '$ref' fora do padrão (alpha-0.1.0, beta-0.1.0, rc-0.1.0, v1.0.0)"
-          } else {
-            $version = $conf.version
+          $version = "${{ steps.release.outputs.version }}"
+          $signed = -not [string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)
+          if ("${{ steps.release.outputs.release }}" -eq "true" -and -not $signed) {
+            throw "Release automática exige TAURI_SIGNING_PRIVATE_KEY para gerar a assinatura e latest.json."
           }
-          $signed = [bool]$env:TAURI_SIGNING_PRIVATE_KEY
           # Sobrescreve a versão e aponta a atualização pro repositório onde o build roda
           $override = @{
             version = $version
@@ -82,9 +85,8 @@ jobs:
             plugins = @{ updater = @{ endpoints = @("https://github.com/${{ github.repository }}/releases/latest/download/latest.json") } }
           }
           $override | ConvertTo-Json -Depth 6 | Set-Content desktop/release.conf.json -Encoding utf8
-          Write-Host "versão $version (release: $release, assinado: $signed)"
+          Write-Host "versão $version (assinado: $signed)"
           "version=$version" >> $env:GITHUB_OUTPUT
-          "release=$release" >> $env:GITHUB_OUTPUT
           "signed=$signed" >> $env:GITHUB_OUTPUT
 
       - name: Gerar instalador
@@ -111,7 +113,7 @@ jobs:
               platforms = [ordered]@{
                 "windows-x86_64" = [ordered]@{
                   signature = (Get-Content "$($setup.FullName).sig" -Raw).Trim()
-                  url = "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/$name"
+                  url = "https://github.com/${{ github.repository }}/releases/download/${{ steps.release.outputs.tag }}/$name"
                 }
               }
             }
@@ -126,10 +128,12 @@ jobs:
           if-no-files-found: error
 
       - name: Publicar Release
-        if: steps.version.outputs.release == 'True'
+        if: steps.release.outputs.release == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          name: Faz o L ${{ github.ref_name }}
+          name: Faz o L ${{ steps.release.outputs.tag }}
+          tag_name: ${{ steps.release.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           files: dist/*
           generate_release_notes: true
           # Precisa ser a "latest" (não pre-release) pro latest.json ser achado

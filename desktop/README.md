@@ -52,6 +52,47 @@ FAZOL_SERVER_URL=https://live.seudominio.com npm run build
 
 Sem isso, na primeira vez o app pede o endereço do servidor (fica salvo em `%APPDATA%\com.fazol.desktop\server.txt`; apague o arquivo para trocar).
 
+## Releases automáticas
+
+Todo push na `main` (incluindo merges de PRs, mesmo que alterem apenas o site)
+compila o instalador Windows e publica uma Release no GitHub quando o build termina
+com sucesso. A tag é `vX.Y.Z`, incrementando o patch da maior versão entre as tags
+existentes e a configuração do app. Por exemplo, `v0.1.9` gera `v0.1.10`.
+Reexecutar um commit que já tem uma tag estável reutiliza essa versão.
+
+As tags manuais `alpha-X.Y.Z`, `beta-X.Y.Z`, `rc-X.Y.Z` e `vX.Y.Z` continuam
+publicando a versão indicada. A execução manual pela aba Actions publica uma
+release quando usa a `main` ou uma tag válida; em outras branches, gera apenas
+o instalador nos Artifacts. As publicações são serializadas; o GitHub mantém
+uma execução ativa e uma pendente, podendo substituir a pendente por um push
+mais recente.
+
+Configure `FAZOL_SERVER_URL` nas variáveis do Actions para embutir o servidor.
+A publicação exige a assinatura e o `latest.json` necessários para atualizar os apps. Configure
+os secrets `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`,
+correspondentes à chave pública de `src-tauri/tauri.conf.json`. Sem a chave privada,
+o workflow falha antes de compilar/publicar uma release. Builds manuais de outras
+branches ainda podem gerar instaladores sem atualização automática.
+
+O `./install.sh update` continua atualizando os containers na VPS; a release
+é publicada pelo GitHub Actions após o push na `main`.
+
+## Atualização automática do app instalado
+
+O app consulta a última release ao abrir. Ao encontrar uma versão superior,
+baixa em segundo plano, valida a
+assinatura e instala/reabre automaticamente. Se houver uma transmissão nativa em
+andamento, aguarda ela terminar para instalar. O botão **Procurar atualização**
+continua permitindo uma consulta imediata nas configurações.
+
+Falhas aparecem no log. Para tentar novamente, use **Procurar atualização** ou
+reabra o app. Consultas simultâneas são ignoradas enquanto já houver uma
+verificação, download, espera pela transmissão ou instalação.
+
+Quem estiver apenas assistindo pode ter
+a janela reiniciada: a espera atual protege a transmissão nativa. O site e os
+containers da VPS continuam sendo atualizados com `./install.sh update`.
+
 ## Aviso do Windows na instalação
 
 Sem assinatura de código, o Windows mostra **"O Windows protegeu o computador"**. Clique em **Mais informações → Executar assim mesmo**. Para tirar o aviso é preciso assinar o instalador (ex.: Azure Trusted Signing).

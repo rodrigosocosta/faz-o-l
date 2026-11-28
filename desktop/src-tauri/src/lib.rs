@@ -8,7 +8,6 @@
 mod headless;
 mod hotkeys;
 mod logfile;
-mod log_queue;
 mod mini;
 mod server;
 mod stream;
@@ -37,7 +36,6 @@ pub fn run() {
         .manage(hotkeys::HotkeyState::default())
         .invoke_handler(tauri::generate_handler![
             server::app_version,
-            logfile::take_client_logs,
             updater::update_status,
             updater::check_update,
             server::get_server,

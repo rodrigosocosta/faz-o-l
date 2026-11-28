@@ -1,4 +1,3 @@
-import { startClientLogs } from '/client-logs.js';
 import {
   AudioPresets,
   DisconnectReason,
@@ -19,7 +18,7 @@ const QUALITY = {
 };
 
 // Versão do site (aparece no painel; ajuda a saber se o app pegou o código novo)
-const SITE_VERSION = '2026-11-23.1';
+const SITE_VERSION = '2026-11-27.1';
 
 const $ = (sel) => document.querySelector(sel);
 const state = {
@@ -32,7 +31,6 @@ const state = {
   busy: false,
   leaving: false,
 };
-startClientLogs(()=>Boolean(state.me),SITE_VERSION);
 
 // ---------------- utilidades ----------------
 
@@ -204,7 +202,7 @@ function applyTheme() {
   const light = store.get('theme', 'dark') === 'light';
   if (light) document.documentElement.dataset.theme = 'light';
   else delete document.documentElement.dataset.theme;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', light ? '#f4f6fa' : '#16191e');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', light ? '#f4f6fa' : '#0f1218');
 }
 
 function applySidebar() {
@@ -301,10 +299,10 @@ function renderRoomActions() {
   $('#btn-stop-live').disabled = appLive && !state.local;
   $('#btn-stop-live').title = appLive && !state.local ? 'Você está ao vivo pelo app: pare por lá' : '';
   $('#btn-stop-live-text').textContent = appLive && !state.local ? 'Ao vivo pelo app' : 'Encerrar live';
-  let eventMine = false;
-  try { eventMine = !!ev.data && canControlEvent(); } catch { /* evento ainda não carregado */ }
-  $('#btn-event').hidden = !inRoom;
-  $('#btn-event').querySelector('span').textContent = eventMine ? 'Encerrar evento' : 'Começar evento';
+  let hasEvent = false;
+  try { hasEvent = !!ev.data; } catch { /* evento ainda não carregado */ }
+  $('#btn-event').hidden = !inRoom || hasEvent;
+  $('#btn-event').querySelector('span').textContent = 'Começar evento';
 }
 
 /** Caminho da API do canal atual. */
@@ -348,9 +346,8 @@ async function route() {
   const inviteMatch = path.match(/^\/convite\/([\w-]+)/);
   const profileMatch = path.match(/^\/u\/([^/]+)/);
 
-  // Saiu do canal: sai da sala. Ver um perfil ou os clipes do mesmo canal não conta:
-  // a sala (e a sua transmissão) continua rodando por trás.
-  const leavingRoom = !profileMatch && (!channelMatch || channelMatch[1] !== state.channel?.id);
+  // Navegar pelo site mantém a sala e a transmissão. Só desconecta ao trocar de canal.
+  const leavingRoom = channelMatch && channelMatch[1] !== state.channel?.id;
   if (state.room && leavingRoom) await leave();
   if (!clipsMatch) $('#clip-player').pause();
   if (inviteMatch) return showInvite(inviteMatch[1]);
@@ -429,7 +426,7 @@ async function showHome(erro) {
   // Na primeira visita, com um canal só: entra direto nele
   const first = !state.visitedHome;
   state.visitedHome = true;
-  if (channels.length === 1 && !erro && first) return navigate(`/c/${channels[0].id}`, { replace: true });
+  if (channels.length === 1 && !erro && first && !state.room) return navigate(`/c/${channels[0].id}`, { replace: true });
 
   $('#no-channels').hidden = channels.length > 0;
   $('#channel-list').replaceChildren(
@@ -521,6 +518,7 @@ async function showChannel(id) {
   fillMark($('#join-mark'), c.name, c.icon);
   show('view-join');
   refreshJoinStatus();
+  await join();
 }
 
 async function refreshJoinStatus() {
@@ -549,12 +547,6 @@ async function channelMembers() {
 // ---------------- sala ----------------
 
 $('#btn-join').addEventListener('click', join);
-$('#btn-leave').addEventListener('click', async () => {
-  if ((state.local || myAppStream()) && !(await confirmAction('Sair da sala?', 'Sua transmissão será encerrada ao sair da sala.', 'Sair e encerrar'))) return;
-  await leave();
-  show('view-join');
-  refreshJoinStatus();
-});
 
 // Transmitir: o diálogo explica de onde vem a captura e mostra as vagas
 function openBroadcast() {
@@ -880,6 +872,7 @@ function closeClipMenus() {
 function removeTile(id) {
   const tile = state.tiles.get(id);
   if (!tile) return;
+  if (state.popout?.tile === tile) closeDocumentPip();
   if (tile.video && pipElement() === tile.video) exitPip();
   if (state.mini === id) setMiniMode(null);
   if (tile.isEvent) destroyEventPlayer();
@@ -926,6 +919,11 @@ function layout() {
   // Escolha do layout fica acima dos vídeos quando há mais de uma transmissão
   $('#layout-switch').hidden = count < 2;
   for (const b of $('#layout-switch').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.layout === mode));
+  let companion = 0;
+  for (const tile of state.tiles.values()) {
+    tile.el.classList.toggle('fullscreen-main', tile.id === main);
+    tile.el.style.setProperty('--pip-index', tile.id === main ? 0 : companion++);
+  }
 }
 
 for (const b of $('#layout-switch').querySelectorAll('button')) {
@@ -961,15 +959,35 @@ function updateResolution(tile, track) {
 }
 
 function toggleFullscreen(el) {
-  if (document.fullscreenElement) document.exitFullscreen();
-  else el.requestFullscreen?.().catch(() => {});
+  if (document.fullscreenElement) return document.exitFullscreen().catch(() => {});
+  const tile = [...state.tiles.values()].find(tile => tile.el === el);
+  if (tile) {
+    state.focus = tile.id;
+    layout();
+  }
+  // O palco inteiro mantém as outras lives visíveis como miniaturas, sem mover
+  // vídeos/iframes no DOM (mover o iframe reinicia o player do evento).
+  $('#stage').requestFullscreen?.().catch(() => toast('Não foi possível abrir a tela cheia.', true));
 }
+
+let fullscreenIdleTimer;
+function wakeFullscreenControls() {
+  const stage = $('#stage');
+  stage.classList.remove('fullscreen-idle');
+  clearTimeout(fullscreenIdleTimer);
+  if (document.fullscreenElement === stage) {
+    fullscreenIdleTimer = setTimeout(() => stage.classList.add('fullscreen-idle'), 3000);
+  }
+}
+for (const event of ['pointermove', 'pointerdown', 'keydown', 'focusin']) $('#stage').addEventListener(event, wakeFullscreenControls);
+document.addEventListener('fullscreenchange', wakeFullscreenControls);
 
 // ---------------- picture-in-picture ----------------
 // A live sai numa janela flutuante por cima de tudo (jogo, outras abas).
 // O áudio continua tocando pela página, com o volume escolhido no tile.
 
 function pipSupported(video) {
+  if (!video) return !!window.documentPictureInPicture?.requestWindow;
   if (document.pictureInPictureEnabled && !video.disablePictureInPicture) return true;
   return typeof video.webkitSupportsPresentationMode === 'function'
     && video.webkitSupportsPresentationMode('picture-in-picture');
@@ -984,19 +1002,77 @@ function pipElement() {
 }
 
 async function togglePip(tile) {
+  if (state.popout?.tile === tile) return closeDocumentPip();
   if (state.mini === tile.id) return setMiniMode(null);
-  if (pipElement() === tile.video) return exitPip();
+  if (tile.video && pipElement() === tile.video) return exitPip();
   // App desktop: o WebView2 não tem picture-in-picture, o próprio app vira a janela flutuante
   if (desktop && await setMiniMode(tile.id)) return;
   try {
+    if (!tile.video) return await openDocumentPip(tile);
     if (tile.video.requestPictureInPicture) await tile.video.requestPictureInPicture();
     else tile.video.webkitSetPresentationMode('picture-in-picture');
   } catch (err) {
     console.warn('[pip]', err);
+    if (state.popout?.tile === tile) closeDocumentPip();
     toast(desktop
       ? 'Atualize o app Faz o L para usar a janela flutuante.'
       : 'Não deu para abrir a janela flutuante. A live já carregou?', true);
   }
+}
+
+function closeDocumentPip() {
+  const popout = state.popout;
+  if (!popout) return;
+  state.popout = null;
+  if (popout.tile.isEvent) destroyEventPlayer();
+  if (state.tiles.get(popout.tile.id) === popout.tile) popout.placeholder.replaceWith(popout.tile.el);
+  else popout.placeholder.remove();
+  popout.tile.el.querySelector('.ctl-pip')?.classList.remove('active');
+  popout.window.close();
+  queueMicrotask(() => {
+    if (popout.tile.isEvent && state.room && state.tiles.get(popout.tile.id) === popout.tile && ev.data) {
+      ensureEventPlayer().then(() => syncEventPlayer(true)).catch(err => toast(err.message, true));
+    }
+  });
+}
+
+async function openDocumentPip(tile) {
+  if (!window.documentPictureInPicture?.requestWindow) {
+    return toast('Para abrir o evento em janela flutuante, use Chrome, Edge ou o app Windows.', true);
+  }
+  closeDocumentPip();
+  // Precisa acontecer no clique para preservar a autorização do navegador.
+  const pipWindow = await window.documentPictureInPicture.requestWindow({ width: 640, height: 420 });
+  if (document.fullscreenElement) await document.exitFullscreen();
+  const doc = pipWindow.document;
+  doc.documentElement.dataset.theme = document.documentElement.dataset.theme || '';
+  doc.documentElement.lang = 'pt-BR';
+  doc.title = tile.name;
+  const base = doc.createElement('base');
+  base.href = document.baseURI;
+  const stylesheet = doc.createElement('link');
+  stylesheet.rel = 'stylesheet';
+  stylesheet.href = new URL('/style.css', document.baseURI).href;
+  doc.head.append(base, stylesheet);
+  doc.body.className = 'document-pip';
+  const placeholder = document.createElement('div');
+  placeholder.className = 'player pip-placeholder';
+  const label = document.createElement('span');
+  label.textContent = 'O evento está na janela flutuante';
+  const back = makeButton('Voltar para a sala', 'room');
+  back.addEventListener('click', closeDocumentPip);
+  placeholder.append(label, back);
+  tile.el.before(placeholder);
+  // Iframes entre documentos precisam ser recriados; voltam ao tempo sincronizado.
+  if (tile.isEvent) destroyEventPlayer();
+  doc.body.append(tile.el);
+  state.popout = { tile, window: pipWindow, placeholder };
+  tile.el.querySelector('.ctl-pip').classList.add('active');
+  pipWindow.addEventListener('pagehide', () => {
+    if (state.popout?.window === pipWindow) closeDocumentPip();
+  }, { once: true });
+  if (tile.isEvent) await ensureEventPlayer();
+  syncEventPlayer(true);
 }
 
 /** Modo mini do app desktop: id do tile que vira a janela flutuante, ou null para voltar. */
@@ -1023,6 +1099,7 @@ async function setMiniMode(id) {
 }
 
 function exitPip() {
+  closeDocumentPip();
   if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
   for (const tile of state.tiles.values()) {
     if (tile.video?.webkitPresentationMode === 'picture-in-picture') tile.video.webkitSetPresentationMode('inline');
@@ -1039,8 +1116,8 @@ function setPipState(tile, on) {
 try {
   navigator.mediaSession?.setActionHandler('enterpictureinpicture', () => {
     const tile = (state.focus && state.tiles.get(state.focus))
-      || [...state.tiles.values()].find((t) => !t.isLocal && !t.isEvent);
-    if (tile && !tile.isEvent) togglePip(tile);
+      || [...state.tiles.values()].find((t) => !t.isLocal);
+    if (tile) togglePip(tile);
   });
 } catch { /* navegador não suporta */ }
 
@@ -2578,7 +2655,17 @@ const ev = {
 };
 let ytApiPromise = null;
 
-function loadYouTubeApi() {
+function loadYouTubeApi(target = window) {
+  if (target !== window) {
+    if (target.YT?.Player) return Promise.resolve(target.YT);
+    return new Promise((resolve, reject) => {
+      target.onYouTubeIframeAPIReady = () => resolve(target.YT);
+      const script = target.document.createElement('script');
+      script.src = 'https://www.youtube.com/iframe_api';
+      script.onerror = () => reject(new Error('Não consegui carregar o player na janela flutuante.'));
+      target.document.head.append(script);
+    });
+  }
   if (window.YT?.Player) return Promise.resolve(window.YT);
   if (!ytApiPromise) {
     ytApiPromise = new Promise((resolve, reject) => {
@@ -2603,7 +2690,17 @@ function loadYouTubeApi() {
 const PS = { UNSTARTED: -1, ENDED: 0, PLAYING: 1, PAUSED: 2, BUFFERING: 3, CUED: 5 };
 let twitchApiPromise = null;
 
-function loadTwitchApi() {
+function loadTwitchApi(target = window) {
+  if (target !== window) {
+    if (target.Twitch?.Player) return Promise.resolve(target.Twitch);
+    return new Promise((resolve, reject) => {
+      const script = target.document.createElement('script');
+      script.src = 'https://player.twitch.tv/js/embed/v1.js';
+      script.onload = () => resolve(target.Twitch);
+      script.onerror = () => reject(new Error('Não consegui carregar o player na janela flutuante.'));
+      target.document.head.append(script);
+    });
+  }
   if (window.Twitch?.Player) return Promise.resolve(window.Twitch);
   if (!twitchApiPromise) {
     twitchApiPromise = new Promise((resolve, reject) => {
@@ -2637,7 +2734,7 @@ function createTwitchPlayer(holder, media, startSeconds) {
     opts.video = media.id;
     if (startSeconds > 1) opts.time = twitchTime(startSeconds);
   }
-  const T = window.Twitch.Player;
+  const T = holder.ownerDocument.defaultView.Twitch.Player;
   const tp = new T(holder.id, opts);
   let st = PS.UNSTARTED;
   const live = media.kind === 'channel';
@@ -2772,6 +2869,7 @@ function ensureEventTile() {
         <button type="button" class="button danger ev-stop" title="Encerrar o evento pra todo mundo">${icon('stop')}<span>Encerrar</span></button>
         <button type="button" class="icon-btn ghost ctl-focus" title="Destacar" aria-label="Destacar">${icon('focus')}</button>
         <button type="button" class="icon-btn ghost ctl-theater" title="Modo Teatro" aria-label="Modo Teatro" aria-pressed="false">${icon('theater')}</button>
+        <button type="button" class="icon-btn ghost ctl-pip" title="Janela flutuante do evento" aria-label="Janela flutuante do evento"><svg class="icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><rect x="12" y="12" width="7" height="5.5" rx="1.2"/></svg></button>
         <button type="button" class="icon-btn ghost ctl-full" title="Tela cheia" aria-label="Tela cheia">${icon('expand')}</button>
       </div>
     </div>`;
@@ -2805,7 +2903,15 @@ function ensureEventTile() {
   });
   el.querySelector('.ev-stop').addEventListener('click', stopEvent);
   wireViewControls(tile);
-  el.querySelector('.screen').addEventListener('dblclick', () => toggleFullscreen(el));
+  el.querySelector('.ctl-pip').addEventListener('click', () => togglePip(tile));
+  el.querySelector('.screen').addEventListener('dblclick', () => {
+    if (state.mini === tile.id) setMiniMode(null);
+    else toggleFullscreen(el);
+  });
+  el.addEventListener('mousedown', e => {
+    if (state.mini !== tile.id || e.button !== 0 || e.target.closest('button, input')) return;
+    desktop.window.getCurrentWindow().startDragging().catch(() => {});
+  });
 
   state.tiles.set(EVENT_TILE, tile);
   $('#stage').prepend(el);
@@ -2885,7 +2991,7 @@ function freshEventHolder() {
 }
 
 async function createTwitch(d, key) {
-  await loadTwitchApi();
+  await loadTwitchApi(state.tiles.get(EVENT_TILE)?.el.ownerDocument.defaultView);
   const holder = ev.videoId === key && freshEventHolder();
   if (!holder) return;
   const { adapter, ready } = createTwitchPlayer(holder, d.twitch, eventTarget(d));
@@ -2906,7 +3012,7 @@ async function createKick(d, key) {
 }
 
 async function createYouTube(d, key) {
-  const YT = await loadYouTubeApi();
+  const YT = await loadYouTubeApi(state.tiles.get(EVENT_TILE)?.el.ownerDocument.defaultView);
   const holder = ev.videoId === key && freshEventHolder();
   if (!holder) return;
   await new Promise((resolve) => {
@@ -3063,9 +3169,8 @@ async function stopEvent() {
   }
 }
 
-// Começar evento (cabeçalho da sala). Quem controla o evento atual vê "Encerrar evento".
+// Começar evento no cabeçalho; encerrar fica apenas nos controles do próprio player.
 $('#btn-event').addEventListener('click', () => {
-  if (ev.data && canControlEvent()) return stopEvent();
   if (ev.data) return toast(`Já tem um evento rolando (de ${ev.data.by.name}).`, true);
   $('#event-url').value = '';
   $('#event-title').value = '';

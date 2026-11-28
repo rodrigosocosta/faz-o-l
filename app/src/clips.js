@@ -1,4 +1,3 @@
-import { recordClipCreated, tracedFetch } from './telemetry.js';
 import { logger } from './logger.js';
 // Clipes: os últimos 30 s / 1 min / 2 min de uma live, gerados pelo serviço "recorder".
 //
@@ -184,7 +183,7 @@ export async function clipsRouter() {
 
   // Live começou: o gravador entra na sala na hora (sem esperar a varredura dele)
   liveEvents.on('stream:start', ({ channel }) => {
-    tracedFetch(`${RECORDER_URL}/join?room=${encodeURIComponent(roomName(channel))}`, { method: 'POST', signal: AbortSignal.timeout(3000) })
+    fetch(`${RECORDER_URL}/join?room=${encodeURIComponent(roomName(channel))}`, { method: 'POST', signal: AbortSignal.timeout(3000) })
       .catch(() => {});
   });
 
@@ -223,7 +222,7 @@ export async function clipsRouter() {
     const id = crypto.randomBytes(9).toString('base64url');
     let made;
     try {
-      const r = await tracedFetch(`${RECORDER_URL}/clip`, {
+      const r = await fetch(`${RECORDER_URL}/clip`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ room: roomName(req.channel), identity, seconds, id }),
@@ -243,7 +242,6 @@ export async function clipsRouter() {
            creator_id, creator_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(id, req.channel.id, made.file, made.mime, made.size || 0, made.duration || 0, seconds,
         ownerOf(identity), streamer.name, req.user.id, req.user.name, Date.now());
-    recordClipCreated();
     logger.event('INFO', 'Clipe gerado', {
       'event.name': 'clip.created', 'clip.duration_seconds': made.duration || 0,
       'clip.size_bytes': made.size || 0, 'streamer.id': ownerOf(identity), 'streamer.name': streamer.name,

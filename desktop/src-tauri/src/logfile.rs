@@ -6,16 +6,11 @@
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::{Mutex,OnceLock};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const MAX_BYTES: u64 = 2 * 1024 * 1024;
-static REMOTE_LOGS:OnceLock<Mutex<crate::log_queue::LogQueue<serde_json::Value>>>=OnceLock::new();
 
-#[tauri::command]
-pub fn take_client_logs()->Vec<serde_json::Value> {
-    REMOTE_LOGS.get().and_then(|queue|queue.lock().ok()).map(|mut queue|queue.drain(30)).unwrap_or_default()
-}
 
 struct FileLog(Mutex<File>);
 
@@ -32,12 +27,6 @@ impl log::Log for FileLog {
     fn log(&self, r: &log::Record) {
         if !self.enabled(r.metadata()) {
             return;
-        }
-        // Fila limitada; o webview autenticado encaminha os eventos ao servidor.
-        if let Some(queue)=REMOTE_LOGS.get() {
-            if let Ok(mut queue)=queue.lock() {
-                queue.push(serde_json::json!({"level":r.level().as_str(),"message":r.args().to_string().chars().take(2048).collect::<String>(),"target":r.target()}));
-            }
         }
         let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         // Hora UTC (hh:mm:ss) é o bastante pra casar com os logs do servidor
@@ -60,7 +49,6 @@ pub fn path() -> Option<PathBuf> {
 
 /// Liga o log no arquivo (se não der pra abrir, o app segue sem log).
 pub fn init() {
-    let _=REMOTE_LOGS.set(Mutex::new(crate::log_queue::LogQueue::new(120)));
     let Some(path) = path() else { return };
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
