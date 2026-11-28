@@ -154,14 +154,15 @@ export function eventsRouter() {
     let media = { source: 'youtube', videoId };
     if (twitch) media = { source: 'twitch', twitch };
     if (kick) media = { source: 'kick', kick: { id: kick } };
+    const start = Number(req.body?.start);
     const ev = {
       id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
       ...media,
       title,
       author: info?.author || (twitch?.kind === 'channel' ? twitch.id : kick || ''),
-      by: { id: req.user.id, name: req.user.name },
+      by: { id: req.user.id, name: req.user.name, avatar: req.user.avatar || '' },
       playing: true,
-      position: Math.max(0, Number(req.body?.start) || 0),
+      position: Number.isFinite(start) && start >= 0 ? start : 0,
       updatedAt: Date.now(),
     };
     events.set(channel.id, ev);

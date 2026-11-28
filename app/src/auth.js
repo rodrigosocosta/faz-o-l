@@ -7,6 +7,7 @@ import { canCreateChannels, createChannel, discordBridge, getChannelByGuild, ups
 const SESSION_COOKIE = 'fol_session';
 const STATE_COOKIE = 'fol_state';
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const STATE_TTL_MS = 10 * 60 * 1000;
 const DISCORD_API = 'https://discord.com/api/v10';
 
 // ---------- cookies assinados ----------
@@ -15,21 +16,21 @@ function sign(data) {
   return crypto.createHmac('sha256', config.sessionSecret).update(data).digest('base64url');
 }
 
-function encodeSession(user) {
-  const data = Buffer.from(JSON.stringify({ ...user, exp: Date.now() + SESSION_TTL_MS })).toString('base64url');
+function encodeSigned(payload, ttlMs) {
+  const data = Buffer.from(JSON.stringify({ ...payload, exp: Date.now() + ttlMs })).toString('base64url');
   return `${data}.${sign(data)}`;
 }
 
-function decodeSession(value) {
+function decodeSigned(value) {
   if (!value) return null;
   const [data, sig] = value.split('.');
   if (!data || !sig) return null;
   const expected = sign(data);
   if (sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
   try {
-    const session = JSON.parse(Buffer.from(data, 'base64url').toString('utf8'));
-    if (!session.exp || session.exp < Date.now()) return null;
-    return session;
+    const parsed = JSON.parse(Buffer.from(data, 'base64url').toString('utf8'));
+    if (!parsed.exp || parsed.exp < Date.now()) return null;
+    return parsed;
   } catch {
     return null;
   }
@@ -40,7 +41,14 @@ function parseCookies(header = '') {
   for (const part of header.split(';')) {
     const i = part.indexOf('=');
     if (i < 0) continue;
-    out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    const key = part.slice(0, i).trim();
+    if (!key) continue;
+    const raw = part.slice(i + 1).trim();
+    try {
+      out[key] = decodeURIComponent(raw);
+    } catch {
+      out[key] = raw;
+    }
   }
   return out;
 }
@@ -50,13 +58,13 @@ function cookieOptions(maxAge) {
 }
 
 function setSession(res, user) {
-  res.cookie(SESSION_COOKIE, encodeSession(user), cookieOptions(SESSION_TTL_MS));
+  res.cookie(SESSION_COOKIE, encodeSigned(user, SESSION_TTL_MS), cookieOptions(SESSION_TTL_MS));
 }
 
 /** Middleware: popula req.user a partir do cookie. */
 export function sessionMiddleware(req, _res, next) {
   req.cookies = parseCookies(req.headers.cookie);
-  let session = decodeSession(req.cookies[SESSION_COOKIE]);
+  let session = decodeSigned(req.cookies[SESSION_COOKIE]);
   // Sessão de antes dos perfis (sem o @ do Discord): pede login de novo
   if (session && session.id.startsWith('d') && session.username === undefined) session = null;
   req.user = session ? { id: session.id, username: session.username || '', name: session.name, avatar: session.avatar } : null;
@@ -107,7 +115,7 @@ export function authRouter() {
 
   function startOAuth(res, { mode, next, params }) {
     const state = crypto.randomBytes(16).toString('hex');
-    res.cookie(STATE_COOKIE, JSON.stringify({ state, mode, next: safeNext(next) }), cookieOptions(10 * 60 * 1000));
+    res.cookie(STATE_COOKIE, encodeSigned({ state, mode, next: safeNext(next) }, STATE_TTL_MS), cookieOptions(STATE_TTL_MS));
     const query = new URLSearchParams({
       client_id: config.discord.clientId,
       response_type: 'code',
@@ -135,12 +143,7 @@ export function authRouter() {
 
   router.get('/auth/callback', async (req, res) => {
     const { code, state } = req.query;
-    let saved = {};
-    try {
-      saved = JSON.parse(req.cookies[STATE_COOKIE] || '{}');
-    } catch {
-      /* cookie velho */
-    }
+    const saved = decodeSigned(req.cookies[STATE_COOKIE]) || {};
     res.clearCookie(STATE_COOKIE, { path: '/' });
     if (!code || !state || state !== saved.state) return res.redirect('/?erro=login');
 
@@ -173,7 +176,7 @@ export function authRouter() {
         const guild = grant.guild || (req.query.guild_id ? { id: String(req.query.guild_id) } : null);
         if (!guild) return res.redirect('/?erro=instalacao');
         if (!canCreateChannels(session)) {
-          await discordBridge.leaveGuild?.(guild.id).catch(() => {});
+          if (!getChannelByGuild(guild.id)) await discordBridge.leaveGuild?.(guild.id).catch(() => {});
           return res.redirect('/?erro=liberacao');
         }
         const channel = getChannelByGuild(guild.id) ||

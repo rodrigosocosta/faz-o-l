@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 process.env.PORT = '3999';
 process.env.PUBLIC_URL = 'http://localhost:3999';
 await import('./src/index.js');
-const { upsertUser, createChannel } = await import('./src/channels.js');
+const { upsertUser, createChannel, discordBridge } = await import('./src/channels.js');
 const { sql } = await import('./src/db.js');
 
 function cookie(user) {
@@ -35,6 +35,24 @@ async function call(user, method, path, body) {
 }
 
 await new Promise((r) => setTimeout(r, 300));
+
+// Cookie malformado não derruba a requisição nem invalida a sessão válida ao lado
+const withBadCookie = await fetch('http://localhost:3999/api/me', {
+  headers: { cookie: `ruim=%E0%A4%A; ${cookie(owner)}` },
+});
+assert.equal(withBadCookie.status, 200);
+assert.equal((await withBadCookie.json()).user.id, owner.id);
+
+// fol_state assinado: cookie JSON forjado com mode=install é rejeitado no callback
+const loginStart = await call(null, 'GET', '/auth/login');
+const stateCookieHeader = loginStart.headers.get('set-cookie') || '';
+assert.match(stateCookieHeader, /^fol_state=[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+;/);
+const forgedCallback = await fetch('http://localhost:3999/auth/callback?code=fake&state=abc&guild_id=999', {
+  headers: { cookie: `fol_state=${encodeURIComponent(JSON.stringify({ state: 'abc', mode: 'install', next: '/' }))}` },
+  redirect: 'manual',
+});
+assert.equal(forgedCallback.status, 302);
+assert.equal(forgedCallback.headers.get('location'), '/?erro=login');
 
 // Liberação pra criar canal
 assert.equal((await call(owner, 'GET', '/api/me')).json.canCreate, true);
@@ -82,7 +100,15 @@ await call(friend, 'PATCH', '/api/clips/clip1', { description: 'olha isso @Amigo
 assert.equal((await updated).clip.description, 'olha isso @amigo.legal. e @estranho!');
 await call(friend, 'PATCH', '/api/clips/clip1', { description: 'olha isso @amigo.legal. e @estranho' });
 
-// Salvar: qualquer membro do canal; quem não é do canal não
+// Canais do Discord: só aceita IDs pertencentes ao servidor do canal; limpar funciona mesmo sem bot
+discordBridge.listTextChannels = async (guildId) => (guildId === '999' ? [{ id: '123456', name: 'geral' }] : []);
+assert.equal((await call(owner, 'PUT', `/api/c/${channel.id}/discord`, { notifyChannelId: '123456', clipsChannelId: '' })).status, 200);
+assert.equal((await call(owner, 'PUT', `/api/c/${channel.id}/discord`, { notifyChannelId: '999999' })).status, 400);
+discordBridge.listTextChannels = null;
+assert.equal((await call(owner, 'PUT', `/api/c/${channel.id}/discord`, { notifyChannelId: '', clipsChannelId: '' })).status, 200);
+
+// Salvar: qualquer membro do canal; quem não é do canal não (nem PATCH vazio vaza dados)
+assert.equal((await call(stranger, 'PATCH', '/api/clips/clip1', {})).status, 403);
 assert.equal((await call(stranger, 'PATCH', '/api/clips/clip1', { saved: true })).status, 403);
 const savedByOwner = (await call(owner, 'PATCH', '/api/clips/clip1', { saved: true })).json;
 assert.equal(savedByOwner.saved, true);
@@ -122,6 +148,7 @@ const started = (await call(friend, 'POST', evUrl, { url: 'https://www.youtube.c
 assert.equal(started.event.videoId, 'wpBaB5NN3Nk');
 assert.equal(started.event.title, 'Final');
 assert.equal(started.event.playing, true);
+assert.equal(started.event.by.avatar, '');
 // Só quem começou ou o dono controla
 assert.equal((await call(stranger, 'PATCH', evUrl, { action: 'pause' })).status, 403);
 const paused = (await call(friend, 'PATCH', evUrl, { action: 'pause', position: 42 })).json.event;
@@ -146,15 +173,17 @@ const { kickChannel } = await import('./src/events.js');
 assert.equal(kickChannel('https://kick.com/Rhaychuu'), 'rhaychuu');
 assert.equal(kickChannel('https://kick.com/browse'), null);
 assert.equal(kickChannel('https://exemplo.com/rhaychuu'), null);
-const kk = (await call(friend, 'POST', evUrl, { url: 'https://kick.com/rhaychuu' })).json.event;
+const kk = (await call(friend, 'POST', evUrl, { url: 'https://kick.com/rhaychuu', start: 'Infinity' })).json.event;
 assert.equal(kk.source, 'kick');
 assert.equal(kk.kick.id, 'rhaychuu');
 assert.equal(kk.title, 'Live de rhaychuu na Kick');
+assert.ok(Number.isFinite(kk.position) && kk.position >= 0 && kk.position < 5);
 assert.equal((await call(friend, 'DELETE', evUrl)).status, 200);
 
 // Dono remove membro
 assert.equal((await call(owner, 'DELETE', `/api/c/${channel.id}/members/${friend.id}`)).status, 200);
 assert.equal((await call(friend, 'GET', `/api/c/${channel.id}`)).status, 403);
+assert.equal((await call(friend, 'PATCH', '/api/clips/clip1', { title: 'nao pode mais editar' })).status, 403);
 assert.equal((await call(owner, 'DELETE', `/api/c/${channel.id}/members/${owner.id}`)).status, 400);
 
 console.log('SMOKE OK');

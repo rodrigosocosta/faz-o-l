@@ -255,6 +255,7 @@ export async function clipsRouter() {
   router.patch('/api/clips/:id', requireUser, express.json(), (req, res) => {
     const clip = getClip(req.params.id);
     if (!clip) return res.status(404).json({ error: 'Clipe não encontrado (talvez já tenha expirado).' });
+    if (!memberRole(clip.channel_id, req.user.id)) return res.status(403).json({ error: 'Você não é membro deste canal.' });
     const body = req.body || {};
     const editing = 'title' in body || 'description' in body || body.publish;
     if (editing && clip.creator_id !== req.user.id) return res.status(403).json({ error: 'Só quem clipou pode editar.' });

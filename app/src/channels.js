@@ -246,10 +246,25 @@ export function channelsRouter() {
     res.json({ textChannels, notifyChannelId: c.notify_channel_id, clipsChannelId: c.clips_channel_id });
   });
 
-  router.put('/api/c/:cid/discord', requireUser, requireMember, requireOwner, express.json(), (req, res) => {
+  router.put('/api/c/:cid/discord', requireUser, requireMember, requireOwner, express.json(), async (req, res) => {
     const clean = (v) => (/^\d{5,25}$/.test(String(v || '')) ? String(v) : '');
+    const notifyId = clean(req.body?.notifyChannelId);
+    const clipsId = clean(req.body?.clipsChannelId);
+    if (notifyId || clipsId) {
+      if (!req.channel.guild_id) return res.status(400).json({ error: 'Este canal não está ligado a um servidor do Discord.' });
+      if (!discordBridge.listTextChannels) return res.status(503).json({ error: 'Bot do Discord indisponível no momento.' });
+      try {
+        const allowed = new Set((await discordBridge.listTextChannels(req.channel.guild_id)).map((c) => c.id));
+        if ((notifyId && !allowed.has(notifyId)) || (clipsId && !allowed.has(clipsId))) {
+          return res.status(400).json({ error: 'Canal de texto não pertence a este servidor do Discord.' });
+        }
+      } catch (err) {
+        logger.error('[canais] Falha ao validar canais do Discord:', err);
+        return res.status(502).json({ error: 'Não foi possível validar os canais no Discord.' });
+      }
+    }
     sql('UPDATE channels SET notify_channel_id = ?, clips_channel_id = ? WHERE id = ?')
-      .run(clean(req.body?.notifyChannelId), clean(req.body?.clipsChannelId), req.channel.id);
+      .run(notifyId, clipsId, req.channel.id);
     res.json({ ok: true });
   });
 
