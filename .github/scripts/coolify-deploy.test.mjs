@@ -47,5 +47,8 @@ test('invalid public HTTP endpoints and failed configuration never start a deplo
   await assert.rejects(triggerDeployment({url:'http://example.com',token:'private',uuid:'app',sha,fetcher}));
   assert.equal(calls,0);
   await assert.rejects(triggerDeployment({url:'http://100.64.0.1:8000',token:'private',uuid:'app',sha,fetcher}), /HTTP 401/);
+  const refused = async () => { throw new TypeError('fetch failed', {cause: Object.assign(new Error('connect ECONNREFUSED 100.64.0.1:8000'), {code: 'ECONNREFUSED'})}); };
+  await assert.rejects(triggerDeployment({url:'http://100.64.0.1:8000',token:'private',uuid:'app',sha,fetcher:refused}),
+    error => error.message.includes('(ECONNREFUSED)') && !error.message.includes('100.64.0.1'));
   assert.equal(calls,1);
 });

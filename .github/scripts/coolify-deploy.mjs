@@ -23,7 +23,11 @@ export async function triggerDeployment({url, token, uuid, sha, fetcher=fetch}) 
     try {
       response=await fetcher(base+path,{method,redirect:'error',signal:AbortSignal.timeout(30000),
         headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json',Accept:'application/json'},body:data===undefined?undefined:JSON.stringify(data)});
-    } catch { throw new Error('Não foi possível conectar à API privada do Coolify.'); }
+    } catch (error) {
+      // Só o código da falha (ECONNREFUSED, timeout, redirecionamento...): nunca o endereço.
+      const cause = error?.cause?.code || error?.cause?.name || error?.name || 'desconhecida';
+      throw new Error(`Não foi possível conectar à API privada do Coolify (${cause}). Confira COOLIFY_URL (http://IP:8000) e a regra tcp:8000 no Tailscale.`);
+    }
     if (!response.ok) throw new Error(`Coolify retornou HTTP ${response.status}.`);
     return response.json();
   }
