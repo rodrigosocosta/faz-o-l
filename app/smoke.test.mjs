@@ -54,6 +54,12 @@ const forgedCallback = await fetch('http://localhost:3999/auth/callback?code=fak
 assert.equal(forgedCallback.status, 302);
 assert.equal(forgedCallback.headers.get('location'), '/?erro=login');
 
+// Cookie de login assinado não vale como sessão (nem derruba a requisição)
+const stateValue = stateCookieHeader.match(/^fol_state=([^;]+)/)[1];
+const stateAsSession = await fetch('http://localhost:3999/api/me', { headers: { cookie: `fol_session=${stateValue}` } });
+assert.equal(stateAsSession.status, 200);
+assert.equal((await stateAsSession.json()).user, null);
+
 // Liberação pra criar canal
 assert.equal((await call(owner, 'GET', '/api/me')).json.canCreate, true);
 assert.equal((await call(friend, 'GET', '/api/me')).json.canCreate, false);

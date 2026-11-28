@@ -16,12 +16,13 @@ function sign(data) {
   return crypto.createHmac('sha256', config.sessionSecret).update(data).digest('base64url');
 }
 
-function encodeSigned(payload, ttlMs) {
-  const data = Buffer.from(JSON.stringify({ ...payload, exp: Date.now() + ttlMs })).toString('base64url');
+// typ separa os cookies assinados: um cookie de login não vale como sessão e vice-versa.
+function encodeSigned(payload, ttlMs, typ) {
+  const data = Buffer.from(JSON.stringify({ ...payload, typ, exp: Date.now() + ttlMs })).toString('base64url');
   return `${data}.${sign(data)}`;
 }
 
-function decodeSigned(value) {
+function decodeSigned(value, typ) {
   if (!value) return null;
   const [data, sig] = value.split('.');
   if (!data || !sig) return null;
@@ -30,6 +31,9 @@ function decodeSigned(value) {
   try {
     const parsed = JSON.parse(Buffer.from(data, 'base64url').toString('utf8'));
     if (!parsed.exp || parsed.exp < Date.now()) return null;
+    // Sessões emitidas antes do typ continuam válidas até expirarem.
+    const legacySession = typ === 'session' && parsed.typ === undefined;
+    if (parsed.typ !== typ && !legacySession) return null;
     return parsed;
   } catch {
     return null;
@@ -58,13 +62,14 @@ function cookieOptions(maxAge) {
 }
 
 function setSession(res, user) {
-  res.cookie(SESSION_COOKIE, encodeSigned(user, SESSION_TTL_MS), cookieOptions(SESSION_TTL_MS));
+  res.cookie(SESSION_COOKIE, encodeSigned(user, SESSION_TTL_MS, 'session'), cookieOptions(SESSION_TTL_MS));
 }
 
 /** Middleware: popula req.user a partir do cookie. */
 export function sessionMiddleware(req, _res, next) {
   req.cookies = parseCookies(req.headers.cookie);
-  let session = decodeSigned(req.cookies[SESSION_COOKIE]);
+  let session = decodeSigned(req.cookies[SESSION_COOKIE], 'session');
+  if (session && typeof session.id !== 'string') session = null;
   // Sessão de antes dos perfis (sem o @ do Discord): pede login de novo
   if (session && session.id.startsWith('d') && session.username === undefined) session = null;
   req.user = session ? { id: session.id, username: session.username || '', name: session.name, avatar: session.avatar } : null;
@@ -115,7 +120,7 @@ export function authRouter() {
 
   function startOAuth(res, { mode, next, params }) {
     const state = crypto.randomBytes(16).toString('hex');
-    res.cookie(STATE_COOKIE, encodeSigned({ state, mode, next: safeNext(next) }, STATE_TTL_MS), cookieOptions(STATE_TTL_MS));
+    res.cookie(STATE_COOKIE, encodeSigned({ state, mode, next: safeNext(next) }, STATE_TTL_MS, 'state'), cookieOptions(STATE_TTL_MS));
     const query = new URLSearchParams({
       client_id: config.discord.clientId,
       response_type: 'code',
@@ -143,7 +148,7 @@ export function authRouter() {
 
   router.get('/auth/callback', async (req, res) => {
     const { code, state } = req.query;
-    const saved = decodeSigned(req.cookies[STATE_COOKIE]) || {};
+    const saved = decodeSigned(req.cookies[STATE_COOKIE], 'state') || {};
     res.clearCookie(STATE_COOKIE, { path: '/' });
     if (!code || !state || state !== saved.state) return res.redirect('/?erro=login');
 
