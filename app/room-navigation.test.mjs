@@ -80,3 +80,40 @@ for (const connected of [false, true]) {
     assert.deepEqual(navigations, connected ? [] : ['/c/only']);
   });
 }
+
+test('switching events between Kick and YouTube recreates the player instead of calling loadVideoById', async () => {
+  const calls = [];
+  const makeContext = (initialPlayer, data) => {
+    const context = {
+      EVENT_TILE: 'event',
+      state: { tiles: new Map([['event', {}]]) },
+      ev: { data, player: initialPlayer, ready: true, videoId: 'old', creating: false, timer: null, ticks: 0 },
+      mediaKey: (d) => `${d.source || 'youtube'}:${d.videoId || d.kick?.id || d.twitch?.id}`,
+      eventTarget: () => 0,
+      destroyEventPlayer() { calls.push('destroy'); context.ev.player = null; },
+      createYouTube: async () => { calls.push('createYouTube'); },
+      createTwitch: async () => { calls.push('createTwitch'); },
+      createKick: async () => { calls.push('createKick'); },
+      setInterval: () => 1,
+      clearInterval() {},
+    };
+    vm.createContext(context);
+    vm.runInContext(functionSource('async function ensureEventPlayer()', '/** Caixa vazia pro player novo'), context);
+    return context;
+  };
+
+  // Kick -> YouTube
+  await makeContext({ kick: true }, { source: 'youtube', videoId: 'abc12345678' }).ensureEventPlayer();
+  assert.deepEqual(calls, ['destroy', 'createYouTube']);
+
+  // YouTube -> Kick
+  calls.length = 0;
+  const ytPlayer = { loadVideoById: () => calls.push('loadVideoById') };
+  await makeContext(ytPlayer, { source: 'kick', kick: { id: 'canal' } }).ensureEventPlayer();
+  assert.deepEqual(calls, ['destroy', 'createKick']);
+
+  // YouTube -> YouTube continua reutilizando o player
+  calls.length = 0;
+  await makeContext(ytPlayer, { source: 'youtube', videoId: 'xyz12345678' }).ensureEventPlayer();
+  assert.deepEqual(calls, ['loadVideoById']);
+});

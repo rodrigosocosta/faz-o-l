@@ -173,11 +173,11 @@ export async function startBot() {
 
   // ---------- avisos ----------
 
-  async function textChannel(id) {
-    if (!id || !client.isReady()) return null;
+  async function textChannel(id, guildId) {
+    if (!id || !guildId || !client.isReady()) return null;
     try {
       const channel = await client.channels.fetch(id);
-      return channel?.isTextBased() ? channel : null;
+      return channel?.isTextBased() && channel.guildId === guildId ? channel : null;
     } catch (err) {
       logger.error('[bot] Canal de texto inválido:', id, err);
       return null;
@@ -204,7 +204,7 @@ export async function startBot() {
 
   liveEvents.on('stream:start', async ({ channel, identity, name: rawName }) => {
     updatePresence().catch(() => {});
-    const target = await textChannel(channel.notify_channel_id);
+    const target = await textChannel(channel.notify_channel_id, channel.guild_id);
     if (!target) return;
     const name = await resolveName(channel.guild_id, identity, rawName);
     const embed = new EmbedBuilder()
@@ -235,7 +235,7 @@ export async function startBot() {
   // Evento (YouTube/Twitch assistido junto): avisa no canal de avisos e marca como encerrado depois
   const eventMessages = new Map(); // id do canal -> mensagem
   liveEvents.on('event:start', async ({ channel, event }) => {
-    const target = await textChannel(channel.notify_channel_id);
+    const target = await textChannel(channel.notify_channel_id, channel.guild_id);
     if (!target) return;
     const embed = new EmbedBuilder()
       .setColor(COLOR_LIVE)
@@ -287,7 +287,7 @@ export async function startBot() {
   }
 
   liveEvents.on('clip:published', async ({ channel, clip }) => {
-    const target = await textChannel(channel.clips_channel_id || channel.notify_channel_id);
+    const target = await textChannel(channel.clips_channel_id || channel.notify_channel_id, channel.guild_id);
     if (!target) return;
     try {
       const msg = await target.send(await clipMessage(channel, clip));
@@ -302,7 +302,7 @@ export async function startBot() {
     const [channelId, messageId] = String(clip.discord_message || '').split(':');
     if (!messageId) return;
     try {
-      const target = await textChannel(channelId);
+      const target = await textChannel(channelId, channel.guild_id);
       const msg = await target?.messages.fetch(messageId);
       if (!msg) return;
       await msg.edit({ ...(await clipMessage(channel, clip, Date.now().toString(36))), allowedMentions: { parse: [] } });

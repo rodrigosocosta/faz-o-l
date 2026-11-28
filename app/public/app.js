@@ -2958,7 +2958,7 @@ async function ensureEventPlayer() {
   const key = mediaKey(d);
   if (ev.videoId === key && (ev.player || ev.creating)) return;
   // YouTube → outro vídeo do YouTube: troca sem recriar o player
-  if (ev.player && ev.ready && !ev.player.twitch && d.source !== 'twitch') {
+  if (ev.player && ev.ready && !ev.player.twitch && !ev.player.kick && (d.source || 'youtube') === 'youtube') {
     ev.videoId = key;
     ev.player.loadVideoById({ videoId: d.videoId, startSeconds: eventTarget(d) });
     return;
