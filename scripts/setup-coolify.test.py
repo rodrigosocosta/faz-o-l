@@ -34,6 +34,28 @@ class SetupTests(unittest.TestCase):
         self.assertNotIn('env_file', compose['services']['app'])
         self.assertEqual(compose['services']['app']['build'], './app')
 
+    def test_repository_key_accepts_coolify_short_form(self):
+        expected = setup.repository_key(setup.REPOSITORY)
+        for value in ('rodrigosocosta/faz-o-l', 'https://github.com/rodrigosocosta/faz-o-l.git',
+                      'git@github.com:rodrigosocosta/faz-o-l.git', 'https://github.com/RodrigoSoCosta/faz-o-l/'):
+            self.assertEqual(setup.repository_key(value), expected, value)
+        self.assertNotEqual(setup.repository_key('someone/faz-o-l'), expected)
+
+    def test_register_reuses_application_saved_in_short_form(self):
+        calls = []
+        def api(method, path, data=None):
+            calls.append((method, path))
+            if method == 'PATCH' and path == '/applications/application':
+                self.assertEqual(data['git_repository'], 'rodrigosocosta/faz-o-l')
+            if method == 'GET' and path == '/applications/application':
+                return {'uuid': 'application', 'git_repository': 'rodrigosocosta/faz-o-l'}
+            return {}
+        with tempfile.TemporaryDirectory() as directory:
+            state = {'repository': setup.REPOSITORY, 'branch': 'main', 'server_uuid': 's',
+                     'project_uuid': 'p', 'application_uuid': 'application'}
+            setup.register(api, state, Path(directory) / 'state.json')
+        self.assertIn(('PATCH', '/applications/application'), calls)
+
     def test_repository_template_matches_script_payload(self):
         template = SCRIPT.parent.parent / 'docker-compose.coolify.yml'
         self.assertEqual(json.loads(template.read_text()), setup.compose_spec())

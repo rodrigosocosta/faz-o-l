@@ -256,19 +256,30 @@ def register(api, state, state_path, server_uuid=None):
         save_state(state_path, state)
     else:
         existing = api('GET', '/applications/' + state['application_uuid'])
-        if existing.get('git_repository', '').rstrip('/').removesuffix('.git') != state['repository']:
+        if repository_key(existing.get('git_repository')) != repository_key(state['repository']):
             raise SetupError('A aplicação salva aponta para outro repositório. Nenhuma configuração foi alterada.')
-        api('PATCH', '/applications/' + state['application_uuid'], settings)
+        # Coolify stores PATCHed values verbatim and prefixes github.com itself on deploy.
+        api('PATCH', '/applications/' + state['application_uuid'],
+            dict(settings, git_repository=repository_path(state['repository'])))
     if state.get('env'):
         api('PATCH', '/applications/' + state['application_uuid'] + '/envs/bulk',
             {'data': [{'key': k, 'value': v, 'is_preview': False, 'is_literal': True}
                       for k, v in state['env'].items()]})
 
 
+def repository_path(value):
+    """GitHub owner/name, the form Coolify stores for public repositories."""
+    value = (value or '').strip().rstrip('/').removesuffix('.git').rstrip('/')
+    return re.sub(r'^(?:https?://|ssh://git@|git@)?github\.com[:/]', '', value, flags=re.I)
+
+
+def repository_key(value):
+    return repository_path(value).lower()
+
+
 def published_commit(directory, state, command=run):
     origin = command(['git', '-C', str(directory), 'config', '--get', 'remote.origin.url'])
-    normalized = origin.replace('git@github.com:', 'https://github.com/').rstrip('/').removesuffix('.git')
-    if normalized != state['repository'].rstrip('/').removesuffix('.git'):
+    if repository_key(origin) != repository_key(state['repository']):
         raise SetupError('O origin da instalação não corresponde ao repositório cadastrado.')
     command(['git', '-C', str(directory), 'fetch', '--no-tags', 'origin', state['branch']])
     try:
